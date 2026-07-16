@@ -1,21 +1,37 @@
 package SZCORE
 import chisel3._
 import chisel3.util._
+import chisel3.util.experimental.loadMemoryFromFile
+import scala.xml.dtd.IMPLIED
+import chisel3.experimental._
+import javax.swing.text.StyledEditorKit.BoldAction
+
+class IROM extends BlackBox {
+  override def desiredName = "IROM"
+
+  val io = IO(new Bundle {
+    val clka  = Input(Clock())
+    val addra = Input(UInt(14.W))
+    val douta = Output(UInt(32.W))
+  })
+}
+
+class DRAM extends BlackBox {
+  override def desiredName = "DRAM"
+
+  val io = IO(new Bundle {
+    val clka  = Input(Clock())
+    val wea   = Input(UInt(4.W))
+    val addra = Input(UInt(15.W))
+    val dina  = Input(UInt(32.W))
+    val douta = Output(UInt(32.W))
+  })
+}
+
 class SZCOREtop extends RawModule {
   val io = IO(new Bundle {
     val cpu_clk = Input(Clock())
     val cpu_rst = Input(Bool())
-    val ifetch_req = Output(Bool())
-    val ifetch_addr = Output(UInt(32.W))
-    val ifetch_valid = Input(Bool())
-    val ifetch_inst = Input(UInt(32.W))
-    val daccess_ren = Output(UInt(4.W))
-    val daccess_addr = Output(UInt(32.W))
-    val daccess_rvalid = Input(Bool())
-    val daccess_rdata = Input(UInt(32.W))
-    val daccess_wen = Output(UInt(4.W))
-    val daccess_wdata = Output(UInt(32.W))
-    val daccess_wresp = Input(Bool())
     val inst    = Output(UInt(32.W))
     val pc      = Output(UInt(32.W))
   })
@@ -42,6 +58,7 @@ class SZCOREtop extends RawModule {
   val lsu_wmask          = lsu.io.lsu_wmask
   val lsu_wen            = lsu.io.lsu_wen
   val ifu_raddr          = ifu.io.ifu_raddr
+  val ifu_rdata          = ifu.io.ifu_rdata
   val gpr_we             =
     (!idu.io.S) && (idu.io.R || idu.io.I || idu.io.U || idu.io.J || idu.io.mem_load || idu.io.csr)
   val wbu_writeback_data = wbu.io.writeback_data
@@ -57,61 +74,21 @@ class SZCOREtop extends RawModule {
   val csr_mret           = idu.io.mret
   val jumptarget         = Mux(idu.io.mret, csr_readval, exu_result)
 
-  val fetchOutstanding = RegInit(false.B)
-  val memPending       = RegInit(false.B)
-  val memIsLoad        = RegInit(false.B)
-  val memRd            = RegInit(0.U(5.W))
-  val memFunct3        = RegInit(0.U(3.W))
-  val memAddr          = RegInit(0.U(32.W))
-  val daccessRenReg    = RegInit(0.U(4.W))
-  val daccessAddrReg   = RegInit(0.U(32.W))
-  val daccessWenReg    = RegInit(0.U(4.W))
-  val daccessWdataReg  = RegInit(0.U(32.W))
+  val irom = Module(new IROM)
+  irom.io.clka := io.cpu_clk
+  irom.io.addra := ifu_raddr(15, 2)
 
-  val fetchAccept = io.ifetch_valid && fetchOutstanding
-  val isMemAccess = idu.io.mem_load || idu.io.S
-  val memDone = memPending && Mux(memIsLoad, io.daccess_rvalid, io.daccess_wresp)
-  val instructionFinished = (fetchAccept && !isMemAccess) || memDone
-  val issueMemoryAccess = fetchAccept && isMemAccess
-  val normalWriteback = fetchAccept && !isMemAccess && gpr_we
+  val dram = Module(new DRAM)
+  dram.io.clka := io.cpu_clk
+  dram.io.wea := Mux(lsu_wen, lsu_wmask(3, 0), 0.U)
+  dram.io.addra := lsu_addr(16, 2)
+  dram.io.dina := lsu_wdata.asUInt
 
-  io.ifetch_req  := !io.cpu_rst && !fetchOutstanding && !memPending && !io.ifetch_valid
-  io.ifetch_addr := ifu_raddr
-  io.daccess_ren := daccessRenReg
-  io.daccess_addr := daccessAddrReg
-  io.daccess_wen := daccessWenReg
-  io.daccess_wdata := daccessWdataReg
-
-  when(io.ifetch_req) {
-    fetchOutstanding := true.B
-  }
-  when(fetchAccept) {
-    fetchOutstanding := false.B
-  }
-
-  daccessRenReg := 0.U
-  daccessWenReg := 0.U
-  when(issueMemoryAccess) {
-    memPending := true.B
-    memIsLoad := idu.io.mem_load
-    memRd := idu.io.rdaddr
-    memFunct3 := ifu_inst(14, 12)
-    memAddr := lsu_addr
-    daccessAddrReg := lsu_addr
-    daccessWdataReg := lsu_wdata.asUInt
-    daccessRenReg := Mux(idu.io.mem_load, lsu_wmask(3, 0), 0.U)
-    daccessWenReg := Mux(idu.io.S, lsu_wmask(3, 0), 0.U)
-  }
-  when(memDone) {
-    memPending := false.B
-  }
-
-  ifu.io.ifu_rdata     := io.ifetch_inst
-  ifu.io.fetch         := instructionFinished
+  ifu.io.ifu_rdata     := irom.io.douta
   ifu.io.jump          := idu_jump
   ifu.io.jumpTarget    := jumptarget.asUInt
 
-  idu.io.inst      := Mux(fetchAccept, ifu_inst, "h00000013".U)
+  idu.io.inst      := ifu_inst
   idu.io.pc        := ifu_pc.asUInt
   idu.io.rs1data := gpr_rs1data
   idu.io.rs2data := gpr_rs2data
@@ -139,11 +116,9 @@ class SZCOREtop extends RawModule {
   exu.io.remu  := idu.io.alu_remu
 
   lsu.io.funct3        := ifu_inst(14, 12)
-  lsu.io.load_funct3   := Mux(memPending, memFunct3, ifu_inst(14, 12))
-  lsu.io.load_addr     := Mux(memPending, memAddr, lsu_addr)
   lsu.io.gpr_rs2data   := gpr_rs2data
   lsu.io.exu_result    := exu_result
-  lsu.io.lsu_rdata     := io.daccess_rdata
+  lsu.io.lsu_rdata     := dram.io.douta
   lsu.io.load          := idu.io.mem_load
   lsu.io.store         := idu.io.S
 
@@ -158,19 +133,19 @@ class SZCOREtop extends RawModule {
 
   gpr.io.rs1addr := idu.io.rs1addr
   gpr.io.rs2addr := idu.io.rs2addr
-  gpr.io.we      := normalWriteback || (memDone && memIsLoad)
-  gpr.io.rdaddr  := Mux(memDone && memIsLoad, memRd, idu.io.rdaddr)
-  gpr.io.rddata  := Mux(memDone && memIsLoad, lsu_loaddata.asSInt, wbu_writeback_data)
+  gpr.io.we      := gpr_we
+  gpr.io.rdaddr  := idu.io.rdaddr
+  gpr.io.rddata  := wbu_writeback_data
 
-  csr.io.we     := csr_we && fetchAccept && !isMemAccess
+  csr.io.we     := csr_we
   csr.io.addr   := csr_addr
   csr.io.op_val := csr_op_val
   csr.io.clear  := csr_clear
   csr.io.set    := csr_set
-  csr.io.write  := csr_write && fetchAccept && !isMemAccess
+  csr.io.write  := csr_write
   csr.io.pc     := csr_pc
-  csr.io.ecall  := csr_ecall && fetchAccept && !isMemAccess
-  csr.io.mret   := csr_mret && fetchAccept && !isMemAccess
+  csr.io.ecall  := csr_ecall
+  csr.io.mret   := csr_mret
 
   io.inst      := ifu_inst
   io.pc        := ifu_pc.asUInt

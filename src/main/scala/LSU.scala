@@ -10,8 +10,6 @@ class LSU extends Module {
   val io = IO(new Bundle {
     val exu_result    = Input(SInt(32.W))
     val funct3        = Input(UInt(3.W))
-    val load_funct3   = Input(UInt(3.W))
-    val load_addr     = Input(UInt(32.W))
     val gpr_rs2data   = Input(SInt(32.W))
     val load          = Input(Bool())
     val store         = Input(Bool())
@@ -27,26 +25,24 @@ class LSU extends Module {
   val rs2data = io.gpr_rs2data
   val byte_offset = result(1, 0)
   val halfword_offset = result(1)
-  val load_byte_offset = io.load_addr(1, 0)
-  val load_halfword_offset = io.load_addr(1)
   val raw_data = io.lsu_rdata
 
   result := io.exu_result
 
-  val selected_byte = MuxLookup(load_byte_offset, 0.U)(Seq(
+  val selected_byte = MuxLookup(byte_offset, 0.U)(Seq(
     0.U -> (raw_data(7, 0)),
     1.U -> (raw_data(15, 8)),
     2.U -> (raw_data(23, 16)),
     3.U -> (raw_data(31, 24))
   ))
 
-  val selected_halfword = MuxLookup(load_halfword_offset, 0.U)(Seq(
+  val selected_halfword = MuxLookup(halfword_offset, 0.U)(Seq(
     0.U -> (raw_data(15, 0)),
     1.U -> (raw_data(31, 16))
   ))
 
   val load_data = WireInit(0.U(32.W))
-  load_data := MuxLookup(io.load_funct3, 0.U)(Seq(
+  load_data := MuxLookup(io.funct3, 0.U)(Seq(
     0b100.U -> Cat(Fill(24, 0.U), selected_byte),
     0b010.U -> raw_data,
     0b001.U -> Cat(Fill(16, selected_halfword(15)), selected_halfword),
