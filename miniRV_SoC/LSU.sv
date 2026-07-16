@@ -38,7 +38,11 @@ module LSU(
   wire             _GEN_2 = io_funct3 == 3'h1;
   wire             _GEN_3 = io_funct3 == 3'h2 & io_exu_result[1:0] == 2'h0;
   assign io_lsu_addr = io_exu_result;
-  assign io_lsu_wdata = io_gpr_rs2data;
+  wire [31:0] _wdata_sb = {4{io_gpr_rs2data[7:0]}};
+  wire [31:0] _wdata_sh = {2{io_gpr_rs2data[15:0]}};
+  assign io_lsu_wdata = _GEN_1 ? _wdata_sb :
+                         _GEN_2 ? _wdata_sh :
+                         io_gpr_rs2data;
   assign io_lsu_wmask =
     {4'h0,
      _GEN_1

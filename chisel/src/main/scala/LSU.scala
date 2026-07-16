@@ -65,6 +65,9 @@ class LSU extends Module {
 
   io.lsu_addr := address
   io.lsu_wen := io.store && writeMask.orR
-  io.lsu_wdata := io.gpr_rs2data
+  io.lsu_wdata := MuxLookup(io.funct3, writeData.asSInt)(Seq(
+    "b000".U -> Fill(4, writeData(7, 0)).asSInt,
+    "b001".U -> Fill(2, writeData(15, 0)).asSInt
+  ))
   io.lsu_wmask := Cat(0.U(4.W), writeMask)
 }
