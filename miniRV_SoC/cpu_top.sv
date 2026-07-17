@@ -16,6 +16,12 @@ module cpu_top(
     wire [3:0]  cpu2dc_wen;
     wire [31:0] cpu2dc_wdata;
     reg         dc2cpu_wresp;
+    wire [31:0] dram_wdata =
+        cpu2dc_wen == 4'b0010 ? {16'h0, cpu2dc_wdata[7:0], 8'h0} :
+        cpu2dc_wen == 4'b0100 ? {8'h0, cpu2dc_wdata[7:0], 16'h0} :
+        cpu2dc_wen == 4'b1000 ? {cpu2dc_wdata[7:0], 24'h0} :
+        cpu2dc_wen == 4'b1100 ? {cpu2dc_wdata[15:0], 16'h0} :
+        cpu2dc_wdata;
 
     always @(posedge cpu_clk) begin
         if (cpu_rst) begin
@@ -39,7 +45,7 @@ module cpu_top(
         .clka  (cpu_clk),
         .wea   (cpu2dc_wen),
         .addra (cpu2dc_addr[16:2]),
-        .dina  (cpu2dc_wdata),
+        .dina  (dram_wdata),
         .douta (dc2cpu_rdata)
     );
 

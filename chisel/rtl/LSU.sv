@@ -33,30 +33,16 @@ module LSU(
      {io_lsu_rdata},
      {{{16{selectedHalfword[15]}}, selectedHalfword}},
      {{{24{selectedByte[7]}}, selectedByte}}};
-  wire [62:0]      _shiftedByteData_T_1 =
-    {55'h0, io_gpr_rs2data[7:0]} << {58'h0, io_exu_result[1:0], 3'h0};
-  wire             _GEN_1 = io_funct3 == 3'h0;
   wire [6:0]       _writeMask_T = 7'h1 << io_exu_result[1:0];
-  wire             _GEN_2 = io_funct3 == 3'h1;
-  wire             _GEN_3 = io_funct3 == 3'h2 & io_exu_result[1:0] == 2'h0;
   assign io_lsu_addr = io_exu_result;
-  assign io_lsu_wdata =
-    _GEN_1
-      ? _shiftedByteData_T_1[31:0]
-      : _GEN_2
-          ? (io_exu_result[0]
-               ? 32'h0
-               : io_exu_result[1]
-                   ? {io_gpr_rs2data[15:0], 16'h0}
-                   : {16'h0, io_gpr_rs2data[15:0]})
-          : _GEN_3 ? io_gpr_rs2data : 32'h0;
+  assign io_lsu_wdata = io_gpr_rs2data;
   assign io_lsu_wmask =
     {4'h0,
-     _GEN_1
+     io_funct3 == 3'h0
        ? _writeMask_T[3:0]
-       : _GEN_2
+       : io_funct3 == 3'h1
            ? (io_exu_result[0] ? 4'h0 : io_exu_result[1] ? 4'hC : 4'h3)
-           : {4{_GEN_3}}};
+           : {4{io_funct3 == 3'h2 & io_exu_result[1:0] == 2'h0}}};
   assign io_lsu_loaddata = _GEN_0[io_load_funct3];
 endmodule
 

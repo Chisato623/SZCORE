@@ -44,6 +44,12 @@ module SZCORESOC4(
     wire [3:0]  daccess_wen;
     wire [31:0] daccess_wdata;
     reg         daccess_wresp;
+    wire [31:0] dram_wdata =
+        daccess_wen == 4'b0010 ? {16'h0, daccess_wdata[7:0], 8'h0} :
+        daccess_wen == 4'b0100 ? {8'h0, daccess_wdata[7:0], 16'h0} :
+        daccess_wen == 4'b1000 ? {daccess_wdata[7:0], 24'h0} :
+        daccess_wen == 4'b1100 ? {daccess_wdata[15:0], 16'h0} :
+        daccess_wdata;
 
     // Both block RAMs have a one-cycle read latency.  Return valid/response
     // one system clock after the core issues the corresponding request.
@@ -69,7 +75,7 @@ module SZCORESOC4(
         .clka  (sys_clk),
         .wea   (daccess_wen),
         .addra (daccess_addr[16:2]),
-        .dina  (daccess_wdata),
+        .dina  (dram_wdata),
         .douta (daccess_rdata)
     );
 
