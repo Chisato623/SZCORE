@@ -5,4 +5,7 @@ LSU.sv
 WBU.sv
 GPR.sv
 CSR.sv
+ICache.sv
+DCache.sv
+AXI_Master.sv
 SZCOREtop.sv

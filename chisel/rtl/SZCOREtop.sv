@@ -6,29 +6,88 @@
 module SZCOREtop(
   input         io_cpu_clk,
                 io_cpu_rst,
-  output        io_ifetch_req,
-  output [31:0] io_ifetch_addr,
-  input         io_ifetch_valid,
-  input  [31:0] io_ifetch_inst,
-  output [3:0]  io_daccess_ren,
-  output [31:0] io_daccess_addr,
-  input         io_daccess_rvalid,
-  input  [31:0] io_daccess_rdata,
-  output [3:0]  io_daccess_wen,
-  output [31:0] io_daccess_wdata,
-  input         io_daccess_wresp,
+  output [3:0]  io_pmem_axi_ar_arid,
+  output [31:0] io_pmem_axi_ar_araddr,
+  output [7:0]  io_pmem_axi_ar_arlen,
+  output [2:0]  io_pmem_axi_ar_arsize,
+  output [1:0]  io_pmem_axi_ar_arburst,
+  output        io_pmem_axi_ar_arlock,
+  output [3:0]  io_pmem_axi_ar_arcache,
+  output [2:0]  io_pmem_axi_ar_arprot,
+  output [3:0]  io_pmem_axi_ar_arqos,
+                io_pmem_axi_ar_arregion,
+  output        io_pmem_axi_ar_arvalid,
+  input         io_pmem_axi_ar_arready,
+  input  [3:0]  io_pmem_axi_r_rid,
+  input  [31:0] io_pmem_axi_r_rdata,
+  input  [1:0]  io_pmem_axi_r_rresp,
+  input         io_pmem_axi_r_rlast,
+                io_pmem_axi_r_rvalid,
+  output        io_pmem_axi_r_rready,
+  output [3:0]  io_pmem_axi_aw_awid,
+  output [31:0] io_pmem_axi_aw_awaddr,
+  output [7:0]  io_pmem_axi_aw_awlen,
+  output [2:0]  io_pmem_axi_aw_awsize,
+  output [1:0]  io_pmem_axi_aw_awburst,
+  output        io_pmem_axi_aw_awlock,
+  output [3:0]  io_pmem_axi_aw_awcache,
+  output [2:0]  io_pmem_axi_aw_awprot,
+  output [3:0]  io_pmem_axi_aw_awqos,
+                io_pmem_axi_aw_awregion,
+  output        io_pmem_axi_aw_awvalid,
+  input         io_pmem_axi_aw_awready,
+  output [31:0] io_pmem_axi_w_wdata,
+  output [3:0]  io_pmem_axi_w_wstrb,
+  output        io_pmem_axi_w_wlast,
+                io_pmem_axi_w_wvalid,
+  input         io_pmem_axi_w_wready,
+  input  [3:0]  io_pmem_axi_b_bid,
+  input  [1:0]  io_pmem_axi_b_bresp,
+  input         io_pmem_axi_b_bvalid,
+  output        io_pmem_axi_b_bready,
   output [31:0] io_inst,
                 io_pc
 );
 
+  wire        _axiMaster_io_icache_axi_ar_arready;
+  wire [31:0] _axiMaster_io_icache_axi_r_rdata;
+  wire        _axiMaster_io_icache_axi_r_rlast;
+  wire        _axiMaster_io_icache_axi_r_rvalid;
+  wire        _axiMaster_io_lsu_axi_ar_arready;
+  wire [31:0] _axiMaster_io_lsu_axi_r_rdata;
+  wire        _axiMaster_io_lsu_axi_r_rlast;
+  wire        _axiMaster_io_lsu_axi_r_rvalid;
+  wire        _axiMaster_io_lsu_axi_aw_awready;
+  wire        _axiMaster_io_lsu_axi_w_wready;
+  wire        _axiMaster_io_lsu_axi_b_bvalid;
+  wire        _dcache_io_cpuRespValid;
+  wire [31:0] _dcache_io_cpuRespData;
+  wire [31:0] _dcache_io_axi_ar_araddr;
+  wire        _dcache_io_axi_ar_arvalid;
+  wire        _dcache_io_axi_r_rready;
+  wire [31:0] _dcache_io_axi_aw_awaddr;
+  wire        _dcache_io_axi_aw_awvalid;
+  wire [31:0] _dcache_io_axi_w_wdata;
+  wire [3:0]  _dcache_io_axi_w_wstrb;
+  wire        _dcache_io_axi_w_wvalid;
+  wire        _dcache_io_axi_b_bready;
+  wire        _icache_io_cpuRespValid;
+  wire [31:0] _icache_io_cpuRespInst;
+  wire [31:0] _icache_io_axi_ar_araddr;
+  wire        _icache_io_axi_ar_arvalid;
+  wire        _icache_io_axi_r_rready;
   wire [31:0] _csr_io_readval;
   wire [31:0] _gpr_io_rs1data;
   wire [31:0] _gpr_io_rs2data;
   wire [31:0] _wbu_io_writeback_data;
-  wire [31:0] _lsu_io_lsu_addr;
-  wire [31:0] _lsu_io_lsu_wdata;
-  wire [7:0]  _lsu_io_lsu_wmask;
-  wire [31:0] _lsu_io_lsu_loaddata;
+  wire        _lsu_io_cacheReq;
+  wire        _lsu_io_cacheWrite;
+  wire [31:0] _lsu_io_cacheAddr;
+  wire [31:0] _lsu_io_cacheWData;
+  wire [3:0]  _lsu_io_cacheWStrb;
+  wire [31:0] _lsu_io_loadData;
+  wire        _lsu_io_busy;
+  wire        _lsu_io_loadDone;
   wire [31:0] _exu_io_result;
   wire        _idu_io_jalr;
   wire        _idu_io_ecall;
@@ -69,69 +128,42 @@ module SZCOREtop(
   wire        _idu_io_csr_set;
   wire        _idu_io_csr_clear;
   wire [11:0] _idu_io_csraddr;
-  wire [31:0] _ifu_io_inst;
-  wire [31:0] _ifu_io_pc;
-  reg         fetchOutstanding;
-  reg         memPending;
-  reg         memIsLoad;
+  wire        _ifu_io_out_valid;
+  wire [31:0] _ifu_io_out_bits_inst;
+  wire [31:0] _ifu_io_out_bits_pc;
+  wire        _ifu_io_cacheReq;
+  wire [31:0] _ifu_io_cacheAddr;
+  wire        ifuFire = _ifu_io_out_valid & ~_lsu_io_busy;
+  wire        memOperation = _idu_io_mem_load | _idu_io_S;
+  wire        issueMemory = ifuFire & memOperation;
   reg  [4:0]  memRd;
-  reg  [2:0]  memFunct3;
-  reg  [31:0] memAddr;
-  reg  [3:0]  daccessRenReg;
-  reg  [31:0] daccessAddrReg;
-  reg  [3:0]  daccessWenReg;
-  reg  [31:0] daccessWdataReg;
-  wire        fetchAccept = io_ifetch_valid & fetchOutstanding;
-  wire        isMemAccess = _idu_io_mem_load | _idu_io_S & (|(_lsu_io_lsu_wmask[3:0]));
-  wire        memDone = memPending & (memIsLoad ? io_daccess_rvalid : io_daccess_wresp);
-  wire        io_ifetch_req_0 =
-    ~io_cpu_rst & ~fetchOutstanding & ~memPending & ~io_ifetch_valid;
-  wire        _gpr_io_rddata_T = memDone & memIsLoad;
-  wire        _csr_io_write_T = _idu_io_csr_write & fetchAccept;
+  wire        _csr_io_write_T = _idu_io_csr_write & ifuFire;
   always @(posedge io_cpu_clk) begin
-    if (io_cpu_rst) begin
-      fetchOutstanding <= 1'h0;
-      memPending <= 1'h0;
-      memIsLoad <= 1'h0;
+    if (io_cpu_rst)
       memRd <= 5'h0;
-      memFunct3 <= 3'h0;
-      memAddr <= 32'h0;
-      daccessRenReg <= 4'h0;
-      daccessAddrReg <= 32'h0;
-      daccessWenReg <= 4'h0;
-      daccessWdataReg <= 32'h0;
-    end
-    else begin
-      automatic logic issueMemoryAccess = fetchAccept & isMemAccess;
-      fetchOutstanding <= ~fetchAccept & (io_ifetch_req_0 | fetchOutstanding);
-      memPending <= ~memDone & (issueMemoryAccess | memPending);
-      if (issueMemoryAccess) begin
-        memIsLoad <= _idu_io_mem_load;
-        memRd <= _idu_io_rdaddr;
-        memFunct3 <= _ifu_io_inst[14:12];
-        memAddr <= _lsu_io_lsu_addr;
-        daccessAddrReg <= _lsu_io_lsu_addr;
-        daccessWdataReg <= _lsu_io_lsu_wdata;
-      end
-      daccessRenReg <= {4{issueMemoryAccess & _idu_io_mem_load}};
-      daccessWenReg <= issueMemoryAccess & _idu_io_S ? _lsu_io_lsu_wmask[3:0] : 4'h0;
-    end
+    else if (issueMemory)
+      memRd <= _idu_io_rdaddr;
   end // always @(posedge)
   IFU ifu (
-    .clock         (io_cpu_clk),
-    .reset         (io_cpu_rst),
-    .io_fetch      (fetchAccept & ~isMemAccess | memDone),
+    .clock             (io_cpu_clk),
+    .reset             (io_cpu_rst),
+    .io_out_ready      (~_lsu_io_busy),
+    .io_out_valid      (_ifu_io_out_valid),
+    .io_out_bits_inst  (_ifu_io_out_bits_inst),
+    .io_out_bits_pc    (_ifu_io_out_bits_pc),
+    .io_cacheReq       (_ifu_io_cacheReq),
+    .io_cacheAddr      (_ifu_io_cacheAddr),
+    .io_cacheRespValid (_icache_io_cpuRespValid),
+    .io_cacheRespInst  (_icache_io_cpuRespInst),
     .io_jump
-      (_idu_io_dobranch | _idu_io_J | _idu_io_jalr | _idu_io_ecall | _idu_io_mret),
-    .io_jumpTarget (_idu_io_mret ? _csr_io_readval : _exu_io_result),
-    .io_ifu_raddr  (io_ifetch_addr),
-    .io_ifu_rdata  (io_ifetch_inst),
-    .io_inst       (_ifu_io_inst),
-    .io_pc         (_ifu_io_pc)
+      (ifuFire
+       & (_idu_io_dobranch | _idu_io_J | _idu_io_jalr | _idu_io_ecall | _idu_io_mret)),
+    .io_jumptarget     (_idu_io_mret ? _csr_io_readval : _exu_io_result),
+    .io_stall          (_lsu_io_busy)
   );
   IDU idu (
-    .io_inst      (fetchAccept ? _ifu_io_inst : 32'h13),
-    .io_pc        (_ifu_io_pc),
+    .io_inst      (_ifu_io_out_bits_inst),
+    .io_pc        (_ifu_io_out_bits_pc),
     .io_rs1data   (_gpr_io_rs1data),
     .io_rs2data   (_gpr_io_rs2data),
     .io_jalr      (_idu_io_jalr),
@@ -199,21 +231,28 @@ module SZCOREtop(
     .io_result (_exu_io_result)
   );
   LSU lsu (
-    .io_exu_result   (_exu_io_result),
-    .io_funct3       (_ifu_io_inst[14:12]),
-    .io_load_funct3  (memPending ? memFunct3 : _ifu_io_inst[14:12]),
-    .io_load_addr    (memPending ? memAddr : _lsu_io_lsu_addr),
-    .io_gpr_rs2data  (_gpr_io_rs2data),
-    .io_lsu_addr     (_lsu_io_lsu_addr),
-    .io_lsu_wdata    (_lsu_io_lsu_wdata),
-    .io_lsu_wmask    (_lsu_io_lsu_wmask),
-    .io_lsu_loaddata (_lsu_io_lsu_loaddata),
-    .io_lsu_rdata    (io_daccess_rdata)
+    .clock             (io_cpu_clk),
+    .reset             (io_cpu_rst),
+    .io_exuResult      (_exu_io_result),
+    .io_funct3         (_ifu_io_out_bits_inst[14:12]),
+    .io_gprRs2Data     (_gpr_io_rs2data),
+    .io_load           (issueMemory & _idu_io_mem_load),
+    .io_store          (issueMemory & _idu_io_S),
+    .io_cacheReq       (_lsu_io_cacheReq),
+    .io_cacheWrite     (_lsu_io_cacheWrite),
+    .io_cacheAddr      (_lsu_io_cacheAddr),
+    .io_cacheWData     (_lsu_io_cacheWData),
+    .io_cacheWStrb     (_lsu_io_cacheWStrb),
+    .io_cacheRespValid (_dcache_io_cpuRespValid),
+    .io_cacheRespData  (_dcache_io_cpuRespData),
+    .io_loadData       (_lsu_io_loadData),
+    .io_busy           (_lsu_io_busy),
+    .io_loadDone       (_lsu_io_loadDone)
   );
   WBU wbu (
     .io_exuresult      (_exu_io_result),
-    .io_mem_rdata      (_lsu_io_lsu_loaddata),
-    .io_pc             (_ifu_io_pc),
+    .io_mem_rdata      (_lsu_io_loadData),
+    .io_pc             (_ifu_io_out_bits_pc),
     .io_mem_load       (_idu_io_mem_load),
     .io_J              (_idu_io_J),
     .io_jalr           (_idu_io_jalr),
@@ -226,35 +265,134 @@ module SZCOREtop(
     .reset      (io_cpu_rst),
     .io_rs1addr (_idu_io_rs1addr),
     .io_rs2addr (_idu_io_rs2addr),
-    .io_rdaddr  (_gpr_io_rddata_T ? memRd : _idu_io_rdaddr),
+    .io_rdaddr  (_lsu_io_loadDone ? memRd : _idu_io_rdaddr),
     .io_rs1data (_gpr_io_rs1data),
     .io_rs2data (_gpr_io_rs2data),
-    .io_rddata  (_gpr_io_rddata_T ? _lsu_io_lsu_loaddata : _wbu_io_writeback_data),
+    .io_rddata  (_lsu_io_loadDone ? _lsu_io_loadData : _wbu_io_writeback_data),
     .io_we
-      (fetchAccept & ~isMemAccess & ~_idu_io_S
+      (ifuFire & ~memOperation & ~_idu_io_S
        & (_idu_io_R | _idu_io_I | _idu_io_U | _idu_io_J | _idu_io_mem_load | _idu_io_csr)
-       | _gpr_io_rddata_T)
+       | _lsu_io_loadDone)
   );
   CSR csr (
     .clock      (io_cpu_clk),
     .reset      (io_cpu_rst),
     .io_addr    (_idu_io_csraddr),
     .io_op_val  (_gpr_io_rs1data),
-    .io_write   (_csr_io_write_T & ~isMemAccess),
+    .io_write   (_csr_io_write_T & ~memOperation),
     .io_set     (_idu_io_csr_set),
-    .io_ecall   (_idu_io_ecall & fetchAccept & ~isMemAccess),
-    .io_mret    (_idu_io_mret & fetchAccept & ~isMemAccess),
+    .io_ecall   (_idu_io_ecall & ifuFire & ~memOperation),
+    .io_mret    (_idu_io_mret & ifuFire & ~memOperation),
     .io_clear   (_idu_io_csr_clear),
-    .io_pc      (_ifu_io_pc),
-    .io_we      (_csr_io_write_T & ~isMemAccess),
+    .io_pc      (_ifu_io_out_bits_pc),
+    .io_we      (_csr_io_write_T & ~memOperation),
     .io_readval (_csr_io_readval)
   );
-  assign io_ifetch_req = io_ifetch_req_0;
-  assign io_daccess_ren = daccessRenReg;
-  assign io_daccess_addr = daccessAddrReg;
-  assign io_daccess_wen = daccessWenReg;
-  assign io_daccess_wdata = daccessWdataReg;
-  assign io_inst = _ifu_io_inst;
-  assign io_pc = _ifu_io_pc;
+  ICache icache (
+    .clock             (io_cpu_clk),
+    .reset             (io_cpu_rst),
+    .io_cpuReq         (_ifu_io_cacheReq),
+    .io_cpuAddr        (_ifu_io_cacheAddr),
+    .io_cpuRespValid   (_icache_io_cpuRespValid),
+    .io_cpuRespInst    (_icache_io_cpuRespInst),
+    .io_axi_ar_araddr  (_icache_io_axi_ar_araddr),
+    .io_axi_ar_arvalid (_icache_io_axi_ar_arvalid),
+    .io_axi_ar_arready (_axiMaster_io_icache_axi_ar_arready),
+    .io_axi_r_rdata    (_axiMaster_io_icache_axi_r_rdata),
+    .io_axi_r_rlast    (_axiMaster_io_icache_axi_r_rlast),
+    .io_axi_r_rvalid   (_axiMaster_io_icache_axi_r_rvalid),
+    .io_axi_r_rready   (_icache_io_axi_r_rready)
+  );
+  DCache dcache (
+    .clock             (io_cpu_clk),
+    .reset             (io_cpu_rst),
+    .io_cpuReq         (_lsu_io_cacheReq),
+    .io_cpuWrite       (_lsu_io_cacheWrite),
+    .io_cpuAddr        (_lsu_io_cacheAddr),
+    .io_cpuWData       (_lsu_io_cacheWData),
+    .io_cpuWStrb       (_lsu_io_cacheWStrb),
+    .io_cpuRespValid   (_dcache_io_cpuRespValid),
+    .io_cpuRespData    (_dcache_io_cpuRespData),
+    .io_axi_ar_araddr  (_dcache_io_axi_ar_araddr),
+    .io_axi_ar_arvalid (_dcache_io_axi_ar_arvalid),
+    .io_axi_ar_arready (_axiMaster_io_lsu_axi_ar_arready),
+    .io_axi_r_rdata    (_axiMaster_io_lsu_axi_r_rdata),
+    .io_axi_r_rlast    (_axiMaster_io_lsu_axi_r_rlast),
+    .io_axi_r_rvalid   (_axiMaster_io_lsu_axi_r_rvalid),
+    .io_axi_r_rready   (_dcache_io_axi_r_rready),
+    .io_axi_aw_awaddr  (_dcache_io_axi_aw_awaddr),
+    .io_axi_aw_awvalid (_dcache_io_axi_aw_awvalid),
+    .io_axi_aw_awready (_axiMaster_io_lsu_axi_aw_awready),
+    .io_axi_w_wdata    (_dcache_io_axi_w_wdata),
+    .io_axi_w_wstrb    (_dcache_io_axi_w_wstrb),
+    .io_axi_w_wvalid   (_dcache_io_axi_w_wvalid),
+    .io_axi_w_wready   (_axiMaster_io_lsu_axi_w_wready),
+    .io_axi_b_bvalid   (_axiMaster_io_lsu_axi_b_bvalid),
+    .io_axi_b_bready   (_dcache_io_axi_b_bready)
+  );
+  AXI_Master axiMaster (
+    .clock                    (io_cpu_clk),
+    .reset                    (io_cpu_rst),
+    .io_icache_axi_ar_araddr  (_icache_io_axi_ar_araddr),
+    .io_icache_axi_ar_arvalid (_icache_io_axi_ar_arvalid),
+    .io_icache_axi_ar_arready (_axiMaster_io_icache_axi_ar_arready),
+    .io_icache_axi_r_rdata    (_axiMaster_io_icache_axi_r_rdata),
+    .io_icache_axi_r_rlast    (_axiMaster_io_icache_axi_r_rlast),
+    .io_icache_axi_r_rvalid   (_axiMaster_io_icache_axi_r_rvalid),
+    .io_icache_axi_r_rready   (_icache_io_axi_r_rready),
+    .io_lsu_axi_ar_araddr     (_dcache_io_axi_ar_araddr),
+    .io_lsu_axi_ar_arvalid    (_dcache_io_axi_ar_arvalid),
+    .io_lsu_axi_ar_arready    (_axiMaster_io_lsu_axi_ar_arready),
+    .io_lsu_axi_r_rdata       (_axiMaster_io_lsu_axi_r_rdata),
+    .io_lsu_axi_r_rlast       (_axiMaster_io_lsu_axi_r_rlast),
+    .io_lsu_axi_r_rvalid      (_axiMaster_io_lsu_axi_r_rvalid),
+    .io_lsu_axi_r_rready      (_dcache_io_axi_r_rready),
+    .io_lsu_axi_aw_awaddr     (_dcache_io_axi_aw_awaddr),
+    .io_lsu_axi_aw_awvalid    (_dcache_io_axi_aw_awvalid),
+    .io_lsu_axi_aw_awready    (_axiMaster_io_lsu_axi_aw_awready),
+    .io_lsu_axi_w_wdata       (_dcache_io_axi_w_wdata),
+    .io_lsu_axi_w_wstrb       (_dcache_io_axi_w_wstrb),
+    .io_lsu_axi_w_wvalid      (_dcache_io_axi_w_wvalid),
+    .io_lsu_axi_w_wready      (_axiMaster_io_lsu_axi_w_wready),
+    .io_lsu_axi_b_bvalid      (_axiMaster_io_lsu_axi_b_bvalid),
+    .io_lsu_axi_b_bready      (_dcache_io_axi_b_bready),
+    .io_pmem_axi_ar_arid      (io_pmem_axi_ar_arid),
+    .io_pmem_axi_ar_araddr    (io_pmem_axi_ar_araddr),
+    .io_pmem_axi_ar_arprot    (io_pmem_axi_ar_arprot),
+    .io_pmem_axi_ar_arvalid   (io_pmem_axi_ar_arvalid),
+    .io_pmem_axi_ar_arready   (io_pmem_axi_ar_arready),
+    .io_pmem_axi_r_rdata      (io_pmem_axi_r_rdata),
+    .io_pmem_axi_r_rlast      (io_pmem_axi_r_rlast),
+    .io_pmem_axi_r_rvalid     (io_pmem_axi_r_rvalid),
+    .io_pmem_axi_r_rready     (io_pmem_axi_r_rready),
+    .io_pmem_axi_aw_awaddr    (io_pmem_axi_aw_awaddr),
+    .io_pmem_axi_aw_awvalid   (io_pmem_axi_aw_awvalid),
+    .io_pmem_axi_aw_awready   (io_pmem_axi_aw_awready),
+    .io_pmem_axi_w_wdata      (io_pmem_axi_w_wdata),
+    .io_pmem_axi_w_wstrb      (io_pmem_axi_w_wstrb),
+    .io_pmem_axi_w_wvalid     (io_pmem_axi_w_wvalid),
+    .io_pmem_axi_w_wready     (io_pmem_axi_w_wready),
+    .io_pmem_axi_b_bvalid     (io_pmem_axi_b_bvalid),
+    .io_pmem_axi_b_bready     (io_pmem_axi_b_bready)
+  );
+  assign io_pmem_axi_ar_arlen = 8'h3;
+  assign io_pmem_axi_ar_arsize = 3'h2;
+  assign io_pmem_axi_ar_arburst = 2'h1;
+  assign io_pmem_axi_ar_arlock = 1'h0;
+  assign io_pmem_axi_ar_arcache = 4'h0;
+  assign io_pmem_axi_ar_arqos = 4'h0;
+  assign io_pmem_axi_ar_arregion = 4'h0;
+  assign io_pmem_axi_aw_awid = 4'h1;
+  assign io_pmem_axi_aw_awlen = 8'h0;
+  assign io_pmem_axi_aw_awsize = 3'h2;
+  assign io_pmem_axi_aw_awburst = 2'h1;
+  assign io_pmem_axi_aw_awlock = 1'h0;
+  assign io_pmem_axi_aw_awcache = 4'h0;
+  assign io_pmem_axi_aw_awprot = 3'h0;
+  assign io_pmem_axi_aw_awqos = 4'h0;
+  assign io_pmem_axi_aw_awregion = 4'h0;
+  assign io_pmem_axi_w_wlast = 1'h1;
+  assign io_inst = _ifu_io_out_bits_inst;
+  assign io_pc = _ifu_io_out_bits_pc;
 endmodule
 

@@ -1,181 +1,172 @@
 package SZCORE
+
 import chisel3._
 import chisel3.util._
+
+/** Single-issue core with split ICache/DCache and one shared AXI4 master port. */
 class SZCOREtop extends RawModule {
   val io = IO(new Bundle {
     val cpu_clk = Input(Clock())
     val cpu_rst = Input(Bool())
-    val ifetch_req = Output(Bool())
-    val ifetch_addr = Output(UInt(32.W))
-    val ifetch_valid = Input(Bool())
-    val ifetch_inst = Input(UInt(32.W))
-    val daccess_ren = Output(UInt(4.W))
-    val daccess_addr = Output(UInt(32.W))
-    val daccess_rvalid = Input(Bool())
-    val daccess_rdata = Input(UInt(32.W))
-    val daccess_wen = Output(UInt(4.W))
-    val daccess_wdata = Output(UInt(32.W))
-    val daccess_wresp = Input(Bool())
-    val inst    = Output(UInt(32.W))
-    val pc      = Output(UInt(32.W))
+    val pmem_axi = new AXIMaster
+    val inst = Output(UInt(32.W))
+    val pc = Output(UInt(32.W))
   })
 
   withClockAndReset(io.cpu_clk, io.cpu_rst) {
-  val ifu           = Module(new IFU)
-  val idu           = Module(new IDU)
-  val exu           = Module(new EXU)
-  val lsu           = Module(new LSU)
-  val wbu           = Module(new WBU)
-  val gpr           = Module(new GPR)
-  val csr           = Module(new CSR)
+    val ifu = Module(new IFU)
+    val idu = Module(new IDU)
+    val exu = Module(new EXU)
+    val lsu = Module(new LSU)
+    val wbu = Module(new WBU)
+    val gpr = Module(new GPR)
+    val csr = Module(new CSR)
+    val icache = Module(new ICache)
+    val dcache = Module(new DCache)
+    val axiMaster = Module(new AXI_Master)
 
-  val ifu_inst           = ifu.io.inst
-  val ifu_pc             = ifu.io.pc
-  val idu_jump           = idu.io.dobranch || idu.io.J || idu.io.jalr || idu.io.ecall || idu.io.mret
-  val csr_readval        = csr.io.readval
-  val exu_result         = exu.io.result
-  val lsu_loaddata       = lsu.io.lsu_loaddata
-  val gpr_rs1data        = gpr.io.rs1data
-  val gpr_rs2data        = gpr.io.rs2data
-  val lsu_addr           = lsu.io.lsu_addr
-  val lsu_wdata          = lsu.io.lsu_wdata
-  val lsu_wmask          = lsu.io.lsu_wmask
-  val lsu_wen            = lsu.io.lsu_wen
-  val ifu_raddr          = ifu.io.ifu_raddr
-  val gpr_we             =
-    (!idu.io.S) && (idu.io.R || idu.io.I || idu.io.U || idu.io.J || idu.io.mem_load || idu.io.csr)
-  val wbu_writeback_data = wbu.io.writeback_data
-  val gpr_a0val          = gpr.io.a0val
-  val csr_we             = idu.io.csr_write
-  val csr_addr           = idu.io.csraddr
-  val csr_op_val         = gpr_rs1data
-  val csr_clear          = idu.io.csr_clear
-  val csr_set            = idu.io.csr_set
-  val csr_write          = idu.io.csr_write
-  val csr_pc             = ifu_pc.asUInt
-  val csr_ecall          = idu.io.ecall
-  val csr_mret           = idu.io.mret
-  val jumptarget         = Mux(idu.io.mret, csr_readval, exu_result)
+    val ifuInst = ifu.io.out.bits.inst
+    val ifuPc = ifu.io.out.bits.pc
+    val ifuFire = ifu.io.out.valid && ifu.io.out.ready
+    val gprRs1Data = gpr.io.rs1data
+    val gprRs2Data = gpr.io.rs2data
+    val exuResult = exu.io.result
+    val csrReadValue = csr.io.readval
+    val jump = idu.io.dobranch || idu.io.J || idu.io.jalr || idu.io.ecall || idu.io.mret
+    val jumpTarget = Mux(idu.io.mret, csrReadValue, exuResult)
+    val memOperation = idu.io.mem_load || idu.io.S
+    val issueMemory = ifuFire && memOperation
+    val gprWrite = !idu.io.S && (idu.io.R || idu.io.I || idu.io.U || idu.io.J || idu.io.mem_load || idu.io.csr)
+    val normalWriteback = ifuFire && !memOperation && gprWrite
 
-  val fetchOutstanding = RegInit(false.B)
-  val memPending       = RegInit(false.B)
-  val memIsLoad        = RegInit(false.B)
-  val memRd            = RegInit(0.U(5.W))
-  val memFunct3        = RegInit(0.U(3.W))
-  val memAddr          = RegInit(0.U(32.W))
-  val daccessRenReg    = RegInit(0.U(4.W))
-  val daccessAddrReg   = RegInit(0.U(32.W))
-  val daccessWenReg    = RegInit(0.U(4.W))
-  val daccessWdataReg  = RegInit(0.U(32.W))
+    val memRd = RegInit(0.U(5.W))
+    memRd := Mux(issueMemory, idu.io.rdaddr, memRd)
 
-  val fetchAccept = io.ifetch_valid && fetchOutstanding
-  // A misaligned SH/SW has a zero byte-enable and must not issue a request.
-  val isMemAccess = idu.io.mem_load || (idu.io.S && lsu_wmask(3, 0).orR)
-  val memDone = memPending && Mux(memIsLoad, io.daccess_rvalid, io.daccess_wresp)
-  val instructionFinished = (fetchAccept && !isMemAccess) || memDone
-  val issueMemoryAccess = fetchAccept && isMemAccess
-  val normalWriteback = fetchAccept && !isMemAccess && gpr_we
+    ifu.io.out.ready := !lsu.io.busy
+    ifu.io.jump := ifuFire && jump
+    ifu.io.jumptarget := jumpTarget
+    ifu.io.stall := lsu.io.busy
+    ifu.io.cacheRespValid := icache.io.cpuRespValid
+    ifu.io.cacheRespInst := icache.io.cpuRespInst
+    icache.io.cpuReq := ifu.io.cacheReq
+    icache.io.cpuAddr := ifu.io.cacheAddr
 
-  io.ifetch_req  := !io.cpu_rst && !fetchOutstanding && !memPending && !io.ifetch_valid
-  io.ifetch_addr := ifu_raddr
-  io.daccess_ren := daccessRenReg
-  io.daccess_addr := daccessAddrReg
-  io.daccess_wen := daccessWenReg
-  io.daccess_wdata := daccessWdataReg
+    idu.io.inst := ifuInst
+    idu.io.pc := ifuPc.asUInt
+    idu.io.rs1data := gprRs1Data
+    idu.io.rs2data := gprRs2Data
 
-  when(io.ifetch_req) {
-    fetchOutstanding := true.B
+    exu.io.a := idu.io.alu_a
+    exu.io.b := idu.io.alu_b
+    exu.io.add := idu.io.alu_add
+    exu.io.lh20 := idu.io.alu_lh20
+    exu.io.sub := idu.io.alu_sub
+    exu.io.slt := idu.io.alu_slt
+    exu.io.sltu := idu.io.alu_sltu
+    exu.io.xor := idu.io.alu_xor
+    exu.io.or := idu.io.alu_or
+    exu.io.and := idu.io.alu_and
+    exu.io.sll := idu.io.alu_sll
+    exu.io.srl := idu.io.alu_srl
+    exu.io.sra := idu.io.alu_sra
+    exu.io.mul := idu.io.alu_mul
+    exu.io.mulh := idu.io.alu_mulh
+    exu.io.mulsu := idu.io.alu_mulsu
+    exu.io.mulu := idu.io.alu_mulu
+    exu.io.div := idu.io.alu_div
+    exu.io.divu := idu.io.alu_divu
+    exu.io.rem := idu.io.alu_rem
+    exu.io.remu := idu.io.alu_remu
+
+    lsu.io.exuResult := exuResult
+    lsu.io.funct3 := ifuInst(14, 12)
+    lsu.io.gprRs2Data := gprRs2Data
+    lsu.io.load := issueMemory && idu.io.mem_load
+    lsu.io.store := issueMemory && idu.io.S
+    lsu.io.cacheRespValid := dcache.io.cpuRespValid
+    lsu.io.cacheRespData := dcache.io.cpuRespData
+    dcache.io.cpuReq := lsu.io.cacheReq
+    dcache.io.cpuWrite := lsu.io.cacheWrite
+    dcache.io.cpuAddr := lsu.io.cacheAddr
+    dcache.io.cpuWData := lsu.io.cacheWData
+    dcache.io.cpuWStrb := lsu.io.cacheWStrb
+
+    wbu.io.exuresult := exuResult
+    wbu.io.mem_rdata := lsu.io.loadData.asUInt
+    wbu.io.pc := ifuPc
+    wbu.io.mem_load := idu.io.mem_load
+    wbu.io.J := idu.io.J
+    wbu.io.jalr := idu.io.jalr
+    wbu.io.csr := idu.io.csr
+    wbu.io.csrval := csrReadValue
+
+    gpr.io.rs1addr := idu.io.rs1addr
+    gpr.io.rs2addr := idu.io.rs2addr
+    gpr.io.we := normalWriteback || lsu.io.loadDone
+    gpr.io.rdaddr := Mux(lsu.io.loadDone, memRd, idu.io.rdaddr)
+    gpr.io.rddata := Mux(lsu.io.loadDone, lsu.io.loadData, wbu.io.writeback_data)
+
+    csr.io.we := idu.io.csr_write && ifuFire && !memOperation
+    csr.io.addr := idu.io.csraddr
+    csr.io.op_val := gprRs1Data
+    csr.io.clear := idu.io.csr_clear
+    csr.io.set := idu.io.csr_set
+    csr.io.write := idu.io.csr_write && ifuFire && !memOperation
+    csr.io.pc := ifuPc.asUInt
+    csr.io.ecall := idu.io.ecall && ifuFire && !memOperation
+    csr.io.mret := idu.io.mret && ifuFire && !memOperation
+
+    axiMaster.io.icache_axi <> icache.io.axi
+    axiMaster.io.lsu_axi <> dcache.io.axi
+    connectAxiMaster(io.pmem_axi, axiMaster.io.pmem_axi)
+
+    io.inst := ifuInst
+    io.pc := ifuPc.asUInt
   }
-  when(fetchAccept) {
-    fetchOutstanding := false.B
-  }
 
-  daccessRenReg := 0.U
-  daccessWenReg := 0.U
-  when(issueMemoryAccess) {
-    memPending := true.B
-    memIsLoad := idu.io.mem_load
-    memRd := idu.io.rdaddr
-    memFunct3 := ifu_inst(14, 12)
-    memAddr := lsu_addr
-    daccessAddrReg := lsu_addr
-    daccessWdataReg := lsu_wdata.asUInt
-    daccessRenReg := Mux(idu.io.mem_load, "b1111".U(4.W), 0.U)
-    daccessWenReg := Mux(idu.io.S, lsu_wmask(3, 0), 0.U)
-  }
-  when(memDone) {
-    memPending := false.B
-  }
+  private def connectAxiMaster(external: AXIMaster, internal: AXIMaster): Unit = {
+    external.ar.arid := internal.ar.arid
+    external.ar.araddr := internal.ar.araddr
+    external.ar.arlen := internal.ar.arlen
+    external.ar.arsize := internal.ar.arsize
+    external.ar.arburst := internal.ar.arburst
+    external.ar.arlock := internal.ar.arlock
+    external.ar.arcache := internal.ar.arcache
+    external.ar.arprot := internal.ar.arprot
+    external.ar.arqos := internal.ar.arqos
+    external.ar.arregion := internal.ar.arregion
+    external.ar.arvalid := internal.ar.arvalid
+    internal.ar.arready := external.ar.arready
 
-  ifu.io.ifu_rdata     := io.ifetch_inst
-  ifu.io.fetch         := instructionFinished
-  ifu.io.jump          := idu_jump
-  ifu.io.jumpTarget    := jumptarget.asUInt
+    internal.r.rid := external.r.rid
+    internal.r.rdata := external.r.rdata
+    internal.r.rresp := external.r.rresp
+    internal.r.rlast := external.r.rlast
+    internal.r.rvalid := external.r.rvalid
+    external.r.rready := internal.r.rready
 
-  idu.io.inst      := Mux(fetchAccept, ifu_inst, "h00000013".U)
-  idu.io.pc        := ifu_pc.asUInt
-  idu.io.rs1data := gpr_rs1data
-  idu.io.rs2data := gpr_rs2data
+    external.aw.awid := internal.aw.awid
+    external.aw.awaddr := internal.aw.awaddr
+    external.aw.awlen := internal.aw.awlen
+    external.aw.awsize := internal.aw.awsize
+    external.aw.awburst := internal.aw.awburst
+    external.aw.awlock := internal.aw.awlock
+    external.aw.awcache := internal.aw.awcache
+    external.aw.awprot := internal.aw.awprot
+    external.aw.awqos := internal.aw.awqos
+    external.aw.awregion := internal.aw.awregion
+    external.aw.awvalid := internal.aw.awvalid
+    internal.aw.awready := external.aw.awready
 
-  exu.io.a    := idu.io.alu_a
-  exu.io.b    := idu.io.alu_b
-  exu.io.add  := idu.io.alu_add
-  exu.io.lh20 := idu.io.alu_lh20
-  exu.io.sub  := idu.io.alu_sub
-  exu.io.slt  := idu.io.alu_slt
-  exu.io.sltu := idu.io.alu_sltu
-  exu.io.xor  := idu.io.alu_xor
-  exu.io.or   := idu.io.alu_or
-  exu.io.and  := idu.io.alu_and
-  exu.io.sll  := idu.io.alu_sll
-  exu.io.srl  := idu.io.alu_srl
-  exu.io.sra  := idu.io.alu_sra
-  exu.io.mul   := idu.io.alu_mul
-  exu.io.mulh  := idu.io.alu_mulh
-  exu.io.mulsu := idu.io.alu_mulsu
-  exu.io.mulu  := idu.io.alu_mulu
-  exu.io.div   := idu.io.alu_div
-  exu.io.divu  := idu.io.alu_divu
-  exu.io.rem   := idu.io.alu_rem
-  exu.io.remu  := idu.io.alu_remu
+    external.w.wdata := internal.w.wdata
+    external.w.wstrb := internal.w.wstrb
+    external.w.wlast := internal.w.wlast
+    external.w.wvalid := internal.w.wvalid
+    internal.w.wready := external.w.wready
 
-  lsu.io.funct3        := ifu_inst(14, 12)
-  lsu.io.load_funct3   := Mux(memPending, memFunct3, ifu_inst(14, 12))
-  lsu.io.load_addr     := Mux(memPending, memAddr, lsu_addr)
-  lsu.io.gpr_rs2data   := gpr_rs2data
-  lsu.io.exu_result    := exu_result
-  lsu.io.lsu_rdata     := io.daccess_rdata
-  lsu.io.load          := idu.io.mem_load
-  lsu.io.store         := idu.io.S
-
-  wbu.io.exuresult := exu_result
-  wbu.io.mem_rdata := lsu_loaddata
-  wbu.io.pc        := ifu_pc
-  wbu.io.mem_load  := idu.io.mem_load
-  wbu.io.J         := idu.io.J
-  wbu.io.jalr      := idu.io.jalr
-  wbu.io.csr       := idu.io.csr
-  wbu.io.csrval    := csr_readval
-
-  gpr.io.rs1addr := idu.io.rs1addr
-  gpr.io.rs2addr := idu.io.rs2addr
-  gpr.io.we      := normalWriteback || (memDone && memIsLoad)
-  gpr.io.rdaddr  := Mux(memDone && memIsLoad, memRd, idu.io.rdaddr)
-  gpr.io.rddata  := Mux(memDone && memIsLoad, lsu_loaddata.asSInt, wbu_writeback_data)
-
-  csr.io.we     := csr_we && fetchAccept && !isMemAccess
-  csr.io.addr   := csr_addr
-  csr.io.op_val := csr_op_val
-  csr.io.clear  := csr_clear
-  csr.io.set    := csr_set
-  csr.io.write  := csr_write && fetchAccept && !isMemAccess
-  csr.io.pc     := csr_pc
-  csr.io.ecall  := csr_ecall && fetchAccept && !isMemAccess
-  csr.io.mret   := csr_mret && fetchAccept && !isMemAccess
-
-  io.inst      := ifu_inst
-  io.pc        := ifu_pc.asUInt
+    internal.b.bid := external.b.bid
+    internal.b.bresp := external.b.bresp
+    internal.b.bvalid := external.b.bvalid
+    external.b.bready := internal.b.bready
   }
 }
-
-

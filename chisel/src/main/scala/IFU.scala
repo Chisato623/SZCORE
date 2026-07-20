@@ -1,23 +1,50 @@
 package SZCORE
-import chisel3.util._
+
 import chisel3._
-class IFU extends Module {
-  val io = IO(new Bundle {
-    val fetch = Input(Bool())
-    val jump =Input(Bool())
-    val jumpTarget = Input(UInt(32.W))
-    val ifu_raddr = Output(UInt(32.W))
-    val ifu_rdata = Input(UInt(32.W))
-    val inst = Output(UInt(32.W))
-    val pc = Output(SInt(32.W))
-  })
-val pcReg =RegInit(0.S(32.W))
-val npc =Mux(io.jump, io.jumpTarget.asSInt, pcReg + 4.S)
-when(io.fetch) {
-  pcReg := npc
+import chisel3.util._
+
+class IFUMessage extends Bundle {
+  val inst = Output(UInt(32.W))
+  val pc = Output(SInt(32.W))
 }
 
-io.inst := io.ifu_rdata
-io.pc := pcReg
-io.ifu_raddr := pcReg.asUInt
+/** Program counter and ICache request/response adapter. */
+class IFU extends Module {
+  val io = IO(new Bundle {
+    val out = Decoupled(new IFUMessage)
+    val cacheReq = Output(Bool())
+    val cacheAddr = Output(UInt(32.W))
+    val cacheRespValid = Input(Bool())
+    val cacheRespInst = Input(UInt(32.W))
+    val jump = Input(Bool())
+    val jumptarget = Input(SInt(32.W))
+    val stall = Input(Bool())
+  })
+
+  val sIdle :: sWaitCache :: sOutput :: Nil = Enum(3)
+  val state = RegInit(sIdle)
+  val pcReg = RegInit(0x80000000.S(32.W))
+  val requestPc = RegInit(0x80000000.S(32.W))
+  val outInst = RegInit(0.U(32.W))
+  val outPc = RegInit(0x80000000.S(32.W))
+
+  val issue = state === sIdle && !io.stall
+  val receive = state === sWaitCache && io.cacheRespValid
+  val redirect = state === sOutput && io.out.valid && io.jump
+
+  state := MuxLookup(state, sIdle)(Seq(
+    sIdle -> Mux(issue, sWaitCache, sIdle),
+    sWaitCache -> Mux(receive, sOutput, sWaitCache),
+    sOutput -> Mux(redirect || io.out.ready, sIdle, sOutput)
+  ))
+  pcReg := Mux(redirect, io.jumptarget, Mux(issue, pcReg + 4.S, pcReg))
+  requestPc := Mux(issue, pcReg, requestPc)
+  outInst := Mux(receive, io.cacheRespInst, outInst)
+  outPc := Mux(receive, requestPc, outPc)
+
+  io.cacheReq := issue
+  io.cacheAddr := pcReg.asUInt
+  io.out.valid := state === sOutput
+  io.out.bits.inst := outInst
+  io.out.bits.pc := outPc
 }

@@ -6,28 +6,65 @@
 module IFU(
   input         clock,
                 reset,
-                io_fetch,
-                io_jump,
-  input  [31:0] io_jumpTarget,
-  output [31:0] io_ifu_raddr,
-  input  [31:0] io_ifu_rdata,
-  output [31:0] io_inst,
-                io_pc
+                io_out_ready,
+  output        io_out_valid,
+  output [31:0] io_out_bits_inst,
+                io_out_bits_pc,
+  output        io_cacheReq,
+  output [31:0] io_cacheAddr,
+  input         io_cacheRespValid,
+  input  [31:0] io_cacheRespInst,
+  input         io_jump,
+  input  [31:0] io_jumptarget,
+  input         io_stall
 );
 
-  reg [31:0] pcReg;
+  reg  [1:0]  state;
+  reg  [31:0] pcReg;
+  reg  [31:0] requestPc;
+  reg  [31:0] outInst;
+  reg  [31:0] outPc;
+  wire        issue = ~(|state) & ~io_stall;
+  wire        io_out_valid_0 = state == 2'h2;
   always @(posedge clock) begin
-    if (reset)
-      pcReg <= 32'h0;
-    else if (io_fetch) begin
-      if (io_jump)
-        pcReg <= io_jumpTarget;
+    if (reset) begin
+      state <= 2'h0;
+      pcReg <= 32'h80000000;
+      requestPc <= 32'h80000000;
+      outInst <= 32'h0;
+      outPc <= 32'h80000000;
+    end
+    else begin
+      automatic logic receive;
+      automatic logic redirect;
+      receive = state == 2'h1 & io_cacheRespValid;
+      redirect = io_out_valid_0 & io_jump;
+      if (state == 2'h2)
+        state <= {~(redirect | io_out_ready), 1'h0};
+      else if (state == 2'h1) begin
+        if (receive)
+          state <= 2'h2;
+        else
+          state <= 2'h1;
+      end
       else
+        state <= {1'h0, ~(|state) & issue};
+      if (redirect)
+        pcReg <= io_jumptarget;
+      else if (issue)
         pcReg <= pcReg + 32'h4;
+      if (issue)
+        requestPc <= pcReg;
+      if (receive) begin
+        outInst <= io_cacheRespInst;
+        outPc <= requestPc;
+      end
     end
   end // always @(posedge)
-  assign io_ifu_raddr = pcReg;
-  assign io_inst = io_ifu_rdata;
-  assign io_pc = pcReg;
+  assign io_out_valid = io_out_valid_0;
+  assign io_out_bits_inst = outInst;
+  assign io_out_bits_pc = outPc;
+  assign io_cacheReq = issue;
+  assign io_cacheAddr = pcReg;
 endmodule
 

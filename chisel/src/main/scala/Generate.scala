@@ -34,3 +34,11 @@ object Generate extends App {
     outputFiles.close()
   }
 }
+
+object GenerateTopVerify extends App {
+  ChiselStage.emitSystemVerilog(
+    new SZCOREtop,
+    args = Array.empty,
+    firtoolOpts = Array("--split-verilog", "-o=rtl/topverify", "-disable-all-randomization", "-strip-debug-info")
+  )
+}
