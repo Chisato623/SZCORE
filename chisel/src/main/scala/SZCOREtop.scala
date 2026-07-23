@@ -1,6 +1,7 @@
 package SZCORE
 
 import chisel3._
+import chisel3.util._
 
 /**
   * Architectural CPU core.
@@ -26,66 +27,108 @@ class CpuCore extends RawModule {
   val daccess_wresp = IO(Input(Bool()))
 
   withClockAndReset(cpu_clk, cpu_rst) {
-    val ifu = Module(new IFU)
     val idu = Module(new IDU)
     val exu = Module(new EXU)
     val mulDiv = Module(new MulDiv)
     val lsu = Module(new LSU)
-    val wbu = Module(new WBU)
     val gpr = Module(new GPR)
     val csr = Module(new CSR)
 
-    val ifuInst = ifu.io.out.bits.inst
-    val ifuPc = ifu.io.out.bits.pc
-    val ifuFire = ifu.io.out.valid && ifu.io.out.ready
-    val memOperation = idu.io.mem_load || idu.io.S
-    val issueMemory = ifuFire && memOperation
-    val aluResult = Mux(idu.io.muldiv, mulDiv.io.result, exu.io.result)
-    val jump = idu.io.dobranch || idu.io.J || idu.io.jalr || idu.io.ecall || idu.io.mret
-    val gprWrite = !idu.io.S && (idu.io.R || idu.io.I || idu.io.U || idu.io.J || idu.io.mem_load || idu.io.csr)
-    val memRd = RegInit(0.U(5.W))
-    when(issueMemory) { memRd := idu.io.rdaddr }
+    // Five independently declared pipeline registers: fetch, IF/ID, ID/EX,
+    // EX/MEM and MEM/WB.  A valid bit turns an entry into a harmless bubble.
+    val fetch = RegInit(0.U.asTypeOf(new FetchReg))
+    val ifId = RegInit(0.U.asTypeOf(new IFIDReg))
+    val idEx = RegInit(0.U.asTypeOf(new IDEXReg))
+    val exMem = RegInit(0.U.asTypeOf(new EXMEMReg))
+    val memWb = RegInit(0.U.asTypeOf(new MEMWBReg))
+    // Kept for the optional Verilator retirement trace injected by Generate.
+    dontTouch(exMem.pc)
+    dontTouch(memWb.pc)
 
-    val mulDivActive = ifu.io.out.valid && idu.io.muldiv
-    val mulDivStart = mulDivActive && !mulDiv.io.busy && !mulDiv.io.done
-    ifu.io.out.ready := !lsu.io.busy && (!mulDivActive || mulDiv.io.done)
-    ifu.io.jump := ifuFire && jump
-    ifu.io.jumptarget := Mux(idu.io.mret, csr.io.readval, aluResult)
-    ifu.io.stall := lsu.io.busy || (mulDivActive && !mulDiv.io.done)
-    ifu.io.cacheRespValid := ifetch_valid
-    ifu.io.cacheRespInst := ifetch_inst
-    ifetch_req := ifu.io.cacheReq
-    ifetch_addr := ifu.io.cacheAddr
+    idu.io.inst := ifId.inst
+    idu.io.pc := ifId.pc
+    gpr.io.rs1addr := idu.io.rs1addr
+    gpr.io.rs2addr := idu.io.rs2addr
+    gpr.io.we := memWb.valid && memWb.regWrite && memWb.rd =/= 0.U
+    gpr.io.rdaddr := memWb.rd
+    gpr.io.rddata := memWb.value
 
-    idu.io.inst := ifuInst
-    idu.io.pc := ifuPc.asUInt
-    idu.io.rs1data := gpr.io.rs1data
-    idu.io.rs2data := gpr.io.rs2data
+    // WB-to-ID forwarding handles a register file read in the same clock as WB.
+    val decodeRs1 = Mux(memWb.valid && memWb.regWrite && memWb.rd =/= 0.U &&
+      memWb.rd === idu.io.rs1addr, memWb.value, gpr.io.rs1data)
+    val decodeRs2 = Mux(memWb.valid && memWb.regWrite && memWb.rd =/= 0.U &&
+      memWb.rd === idu.io.rs2addr, memWb.value, gpr.io.rs2data)
+    idu.io.rs1data := decodeRs1
+    idu.io.rs2data := decodeRs2
 
-    exu.io.a := idu.io.alu_a
-    exu.io.b := idu.io.alu_b
-    exu.io.add := idu.io.alu_add
-    exu.io.lh20 := idu.io.alu_lh20
-    exu.io.sub := idu.io.alu_sub
-    exu.io.slt := idu.io.alu_slt
-    exu.io.sltu := idu.io.alu_sltu
-    exu.io.xor := idu.io.alu_xor
-    exu.io.or := idu.io.alu_or
-    exu.io.and := idu.io.alu_and
-    exu.io.sll := idu.io.alu_sll
-    exu.io.srl := idu.io.alu_srl
-    exu.io.sra := idu.io.alu_sra
+    val exMemForwardable = exMem.valid && exMem.regWrite && !exMem.memLoad && exMem.rd =/= 0.U
+    val memWbForwardable = memWb.valid && memWb.regWrite && memWb.rd =/= 0.U
+    val exRs1 = Mux(exMemForwardable && exMem.rd === idEx.rs1addr, exMem.writebackValue,
+      Mux(memWbForwardable && memWb.rd === idEx.rs1addr, memWb.value, idEx.rs1))
+    val exRs2 = Mux(exMemForwardable && exMem.rd === idEx.rs2addr, exMem.writebackValue,
+      Mux(memWbForwardable && memWb.rd === idEx.rs2addr, memWb.value, idEx.rs2))
 
-    mulDiv.io.start := mulDivStart
-    mulDiv.io.funct3 := idu.io.muldiv_funct3
-    mulDiv.io.a := idu.io.alu_a
-    mulDiv.io.b := idu.io.alu_b
+    val exA = Mux(idEx.auipc || idEx.jal || idEx.branch, idEx.pc.asSInt, exRs1)
+    val exB = Mux(idEx.regWrite && !idEx.memStore && !idEx.branch && !idEx.jal && !idEx.rType,
+      idEx.imm, Mux(idEx.jal || idEx.branch || idEx.auipc || idEx.memLoad || idEx.memStore,
+        idEx.imm, exRs2))
+    exu.io.a := exA
+    exu.io.b := exB
+    exu.io.add := idEx.aluAdd
+    exu.io.lh20 := idEx.aluLh20
+    exu.io.sub := idEx.aluSub
+    exu.io.slt := idEx.aluSlt
+    exu.io.sltu := idEx.aluSltu
+    exu.io.xor := idEx.aluXor
+    exu.io.or := idEx.aluOr
+    exu.io.and := idEx.aluAnd
+    exu.io.sll := idEx.aluSll
+    exu.io.srl := idEx.aluSrl
+    exu.io.sra := idEx.aluSra
 
-    lsu.io.exuResult := aluResult
-    lsu.io.funct3 := ifuInst(14, 12)
-    lsu.io.gprRs2Data := gpr.io.rs2data
-    lsu.io.load := issueMemory && idu.io.mem_load
-    lsu.io.store := issueMemory && idu.io.S
+    val mulDivActive = idEx.valid && idEx.muldiv
+    val executeStall = mulDivActive && !mulDiv.io.done
+    mulDiv.io.start := mulDivActive && !mulDiv.io.busy && !mulDiv.io.done
+    mulDiv.io.funct3 := idEx.funct3
+    mulDiv.io.a := exA
+    mulDiv.io.b := exB
+    val exAluResult = Mux(idEx.muldiv, mulDiv.io.result, exu.io.result)
+
+    val branchTaken = MuxLookup(idEx.funct3, false.B)(Seq(
+      "b000".U -> (exRs1 === exRs2),
+      "b001".U -> (exRs1 =/= exRs2),
+      "b100".U -> (exRs1 < exRs2),
+      "b101".U -> (exRs1 >= exRs2),
+      "b110".U -> (exRs1.asUInt < exRs2.asUInt),
+      "b111".U -> (exRs1.asUInt >= exRs2.asUInt)
+    ))
+
+    csr.io.addr := Mux(memWb.valid && memWb.csr, memWb.csrAddr, idEx.csrAddr)
+    csr.io.op_val := Mux(memWb.valid && memWb.csr, memWb.csrOpValue, exRs1)
+    csr.io.write := memWb.valid && memWb.csr && memWb.csrWrite
+    csr.io.set := memWb.valid && memWb.csr && memWb.csrSet
+    csr.io.clear := memWb.valid && memWb.csr && memWb.csrClear
+    csr.io.we := memWb.valid && memWb.csr && (memWb.csrWrite || memWb.csrSet || memWb.csrClear)
+    // Trap redirects must observe mtvec/mepc in EX; normal CSR writes still retire in WB.
+    csr.io.ecall := idEx.valid && idEx.ecall
+    csr.io.mret := idEx.valid && idEx.mret
+    csr.io.pc := idEx.pc
+
+    val redirect = idEx.valid && !executeStall &&
+      (idEx.jal || idEx.jalr || idEx.ecall || idEx.mret || (idEx.branch && branchTaken))
+    val branchTarget = (idEx.pc.asSInt + idEx.imm).asUInt
+    val jalrTarget = ((exRs1 + idEx.imm).asUInt & "hfffffffe".U)
+    val redirectTarget = Mux(idEx.ecall || idEx.mret, csr.io.readval.asUInt,
+      Mux(idEx.jalr, jalrTarget, branchTarget))
+    val exWritebackValue = Mux(idEx.jal || idEx.jalr, (idEx.pc + 4.U).asSInt,
+      Mux(idEx.csr, csr.io.readval, exAluResult))
+
+    val memOperation = exMem.memLoad || exMem.memStore
+    lsu.io.exuResult := exMem.aluResult
+    lsu.io.funct3 := exMem.funct3
+    lsu.io.gprRs2Data := exMem.storeData
+    lsu.io.load := exMem.valid && exMem.memLoad && !lsu.io.busy
+    lsu.io.store := exMem.valid && exMem.memStore && !lsu.io.busy
     lsu.io.cacheRespValid := daccess_rvalid || daccess_wresp
     lsu.io.cacheRespData := daccess_rdata
     daccess_ren := Mux(lsu.io.cacheReq && !lsu.io.cacheWrite, "b1111".U, 0.U)
@@ -93,30 +136,136 @@ class CpuCore extends RawModule {
     daccess_addr := lsu.io.cacheAddr
     daccess_wdata := lsu.io.cacheWData
 
-    wbu.io.exuresult := aluResult
-    wbu.io.mem_rdata := lsu.io.loadData.asUInt
-    wbu.io.pc := ifuPc
-    wbu.io.mem_load := idu.io.mem_load
-    wbu.io.J := idu.io.J
-    wbu.io.jalr := idu.io.jalr
-    wbu.io.csr := idu.io.csr
-    wbu.io.csrval := csr.io.readval
+    // The blocking cache freezes EX/MEM and all younger stages until it replies.
+    val memReady = !exMem.valid || !memOperation || lsu.io.loadDone || lsu.io.storeDone
+    val memoryStall = exMem.valid && memOperation && !memReady
 
-    gpr.io.rs1addr := idu.io.rs1addr
-    gpr.io.rs2addr := idu.io.rs2addr
-    gpr.io.we := (ifuFire && !memOperation && gprWrite) || lsu.io.loadDone
-    gpr.io.rdaddr := Mux(lsu.io.loadDone, memRd, idu.io.rdaddr)
-    gpr.io.rddata := Mux(lsu.io.loadDone, lsu.io.loadData, wbu.io.writeback_data)
+    val opcode = ifId.inst(6, 0)
+    val decodeUsesRs1 = opcode === "b0110011".U || opcode === "b0010011".U ||
+      opcode === "b0000011".U || opcode === "b0100011".U || opcode === "b1100011".U ||
+      opcode === "b1100111".U || (opcode === "b1110011".U && ifId.inst(14, 12) =/= 0.U)
+    val decodeUsesRs2 = opcode === "b0110011".U || opcode === "b0100011".U || opcode === "b1100011".U
+    val loadUseStall = ifId.valid && idEx.valid && idEx.memLoad && idEx.rd =/= 0.U &&
+      ((decodeUsesRs1 && idEx.rd === idu.io.rs1addr) || (decodeUsesRs2 && idEx.rd === idu.io.rs2addr))
 
-    csr.io.addr := idu.io.csraddr
-    csr.io.op_val := gpr.io.rs1data
-    csr.io.write := idu.io.csr_write && ifuFire && !memOperation
-    csr.io.set := idu.io.csr_set
-    csr.io.clear := idu.io.csr_clear
-    csr.io.ecall := idu.io.ecall && ifuFire && !memOperation
-    csr.io.mret := idu.io.mret && ifuFire && !memOperation
-    csr.io.pc := ifuPc.asUInt
-    csr.io.we := idu.io.csr_write && ifuFire && !memOperation
+    // CSR and trap instructions are deliberately serialised until they retire.
+    val decodeSystem = idu.io.csr || idu.io.ecall || idu.io.mret
+    val systemInFlight = (idEx.valid && (idEx.csr || idEx.ecall || idEx.mret)) ||
+      (exMem.valid && exMem.csr) || (memWb.valid && memWb.csr)
+    val csrStall = ifId.valid && decodeSystem && (idEx.valid || exMem.valid || memWb.valid)
+    val decodeAdvance = ifId.valid && !memoryStall && !executeStall && !loadUseStall &&
+      !csrStall && !systemInFlight && !redirect
+
+    val fetchAllowed = !fetch.pending && !fetch.responseValid && !ifId.valid && !memoryStall && !executeStall &&
+      !systemInFlight && !redirect
+    ifetch_req := fetchAllowed
+    ifetch_addr := fetch.pc
+
+    when(memoryStall || executeStall) {
+      // Hold every pipeline register that can feed the blocked stage.
+    }.otherwise {
+      memWb.valid := exMem.valid && !exMem.memStore
+      memWb.pc := exMem.pc
+      memWb.value := Mux(exMem.memLoad, lsu.io.loadData, exMem.writebackValue)
+      memWb.rd := exMem.rd
+      memWb.regWrite := exMem.regWrite
+      memWb.csr := exMem.csr
+      memWb.csrWrite := exMem.csrWrite
+      memWb.csrSet := exMem.csrSet
+      memWb.csrClear := exMem.csrClear
+      memWb.csrAddr := exMem.csrAddr
+      memWb.csrOpValue := exMem.csrOpValue
+
+      exMem.valid := idEx.valid
+      exMem.pc := idEx.pc
+      exMem.aluResult := exAluResult
+      exMem.writebackValue := exWritebackValue
+      exMem.storeData := exRs2
+      exMem.rd := idEx.rd
+      exMem.funct3 := idEx.funct3
+      exMem.regWrite := idEx.regWrite
+      exMem.memLoad := idEx.memLoad
+      exMem.memStore := idEx.memStore
+      exMem.csr := idEx.csr
+      exMem.csrWrite := idEx.csrWrite
+      exMem.csrSet := idEx.csrSet
+      exMem.csrClear := idEx.csrClear
+      exMem.csrAddr := idEx.csrAddr
+      exMem.csrOpValue := exRs1
+
+      when(redirect || loadUseStall) {
+        idEx.valid := false.B
+      }.otherwise {
+        idEx.valid := decodeAdvance
+        idEx.pc := ifId.pc
+        idEx.rs1 := decodeRs1
+        idEx.rs2 := decodeRs2
+        idEx.imm := idu.io.alu_b
+        idEx.rd := idu.io.rdaddr
+        idEx.rs1addr := idu.io.rs1addr
+        idEx.rs2addr := idu.io.rs2addr
+        idEx.funct3 := ifId.inst(14, 12)
+        idEx.regWrite := !idu.io.S && (idu.io.R || idu.io.I || idu.io.U || idu.io.J || idu.io.mem_load || idu.io.csr)
+        idEx.rType := idu.io.R
+        idEx.memLoad := idu.io.mem_load
+        idEx.memStore := idu.io.S
+        idEx.branch := idu.io.B
+        idEx.jal := idu.io.J
+        idEx.jalr := idu.io.jalr
+        idEx.auipc := idu.io.auipc
+        idEx.csr := idu.io.csr
+        idEx.csrWrite := idu.io.csr_write
+        idEx.csrSet := idu.io.csr_set
+        idEx.csrClear := idu.io.csr_clear
+        idEx.csrAddr := idu.io.csraddr
+        idEx.ecall := idu.io.ecall
+        idEx.mret := idu.io.mret
+        idEx.muldiv := idu.io.muldiv
+        idEx.aluAdd := idu.io.alu_add
+        idEx.aluLh20 := idu.io.alu_lh20
+        idEx.aluSub := idu.io.alu_sub
+        idEx.aluSlt := idu.io.alu_slt
+        idEx.aluSltu := idu.io.alu_sltu
+        idEx.aluXor := idu.io.alu_xor
+        idEx.aluOr := idu.io.alu_or
+        idEx.aluAnd := idu.io.alu_and
+        idEx.aluSll := idu.io.alu_sll
+        idEx.aluSrl := idu.io.alu_srl
+        idEx.aluSra := idu.io.alu_sra
+      }
+
+      when(redirect) {
+        ifId.valid := false.B
+      }.elsewhen(loadUseStall || csrStall) {
+        ifId := ifId
+      }.elsewhen(fetch.responseValid) {
+        ifId.valid := true.B
+        ifId.pc := fetch.responsePc
+        ifId.inst := fetch.responseInst
+      }.elsewhen(decodeAdvance) {
+        ifId.valid := false.B
+      }
+    }
+
+    // A redirect cannot cancel an ICache request, so its response is discarded.
+    when(redirect) {
+      fetch.pc := redirectTarget
+      fetch.responseValid := false.B
+      when(fetch.pending) { fetch.dropResponse := true.B }
+    }.elsewhen(ifetch_valid && fetch.pending) {
+      fetch.pending := false.B
+      when(!fetch.dropResponse) {
+        fetch.responseValid := true.B
+        fetch.responsePc := fetch.pc - 4.U
+        fetch.responseInst := ifetch_inst
+      }
+      fetch.dropResponse := false.B
+    }.elsewhen(fetch.responseValid && !memoryStall && !executeStall && !systemInFlight && !ifId.valid) {
+      fetch.responseValid := false.B
+    }.elsewhen(fetchAllowed) {
+      fetch.pending := true.B
+      fetch.pc := fetch.pc + 4.U
+    }
   }
 }
 

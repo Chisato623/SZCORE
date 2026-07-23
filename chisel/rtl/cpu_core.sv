@@ -19,27 +19,27 @@ module cpu_core(
   input         daccess_wresp
 );
 
-  wire        _ifu_io_out_ready_T_3;
   wire [31:0] _csr_io_readval;
   wire [31:0] _gpr_io_rs1data;
   wire [31:0] _gpr_io_rs2data;
-  wire [31:0] _wbu_io_writeback_data;
   wire        _lsu_io_cacheReq;
   wire        _lsu_io_cacheWrite;
   wire [3:0]  _lsu_io_cacheWStrb;
   wire [31:0] _lsu_io_loadData;
   wire        _lsu_io_busy;
   wire        _lsu_io_loadDone;
+  wire        _lsu_io_storeDone;
   wire        _mulDiv_io_busy;
   wire        _mulDiv_io_done;
   wire [31:0] _mulDiv_io_result;
   wire [31:0] _exu_io_result;
   wire        _idu_io_jalr;
+  wire        _idu_io_auipc;
   wire        _idu_io_ecall;
   wire        _idu_io_mret;
-  wire        _idu_io_dobranch;
   wire        _idu_io_I;
   wire        _idu_io_S;
+  wire        _idu_io_B;
   wire        _idu_io_U;
   wire        _idu_io_J;
   wire        _idu_io_R;
@@ -58,8 +58,6 @@ module cpu_core(
   wire        _idu_io_alu_srl;
   wire        _idu_io_alu_sra;
   wire        _idu_io_muldiv;
-  wire [2:0]  _idu_io_muldiv_funct3;
-  wire [31:0] _idu_io_alu_a;
   wire [31:0] _idu_io_alu_b;
   wire        _idu_io_mem_load;
   wire        _idu_io_csr;
@@ -67,102 +65,408 @@ module cpu_core(
   wire        _idu_io_csr_set;
   wire        _idu_io_csr_clear;
   wire [11:0] _idu_io_csraddr;
-  wire        _ifu_io_out_valid;
-  wire [31:0] _ifu_io_out_bits_inst;
-  wire [31:0] _ifu_io_out_bits_pc;
-  wire        ifuFire = _ifu_io_out_valid & _ifu_io_out_ready_T_3;
-  wire        memOperation = _idu_io_mem_load | _idu_io_S;
-  wire        issueMemory = ifuFire & memOperation;
-  wire [31:0] aluResult = _idu_io_muldiv ? _mulDiv_io_result : _exu_io_result;
-  reg  [4:0]  memRd;
-  wire        mulDivActive = _ifu_io_out_valid & _idu_io_muldiv;
-  assign _ifu_io_out_ready_T_3 = ~_lsu_io_busy & (~mulDivActive | _mulDiv_io_done);
-  wire        _csr_io_we_T = _idu_io_csr_write & ifuFire;
+  reg  [31:0] fetch_pc;
+  reg         fetch_pending;
+  reg         fetch_dropResponse;
+  reg         fetch_responseValid;
+  reg  [31:0] fetch_responsePc;
+  reg  [31:0] fetch_responseInst;
+  reg         ifId_valid;
+  reg  [31:0] ifId_pc;
+  reg  [31:0] ifId_inst;
+  reg         idEx_valid;
+  reg  [31:0] idEx_pc;
+  reg  [31:0] idEx_rs1;
+  reg  [31:0] idEx_rs2;
+  reg  [31:0] idEx_imm;
+  reg  [4:0]  idEx_rd;
+  reg  [4:0]  idEx_rs1addr;
+  reg  [4:0]  idEx_rs2addr;
+  reg  [2:0]  idEx_funct3;
+  reg         idEx_regWrite;
+  reg         idEx_rType;
+  reg         idEx_memLoad;
+  reg         idEx_memStore;
+  reg         idEx_branch;
+  reg         idEx_jal;
+  reg         idEx_jalr;
+  reg         idEx_auipc;
+  reg         idEx_csr;
+  reg         idEx_csrWrite;
+  reg         idEx_csrSet;
+  reg         idEx_csrClear;
+  reg  [11:0] idEx_csrAddr;
+  reg         idEx_ecall;
+  reg         idEx_mret;
+  reg         idEx_muldiv;
+  reg         idEx_aluAdd;
+  reg         idEx_aluLh20;
+  reg         idEx_aluSub;
+  reg         idEx_aluSlt;
+  reg         idEx_aluSltu;
+  reg         idEx_aluXor;
+  reg         idEx_aluOr;
+  reg         idEx_aluAnd;
+  reg         idEx_aluSll;
+  reg         idEx_aluSrl;
+  reg         idEx_aluSra;
+  reg         exMem_valid;
+  reg  [31:0] exMem_pc;
+  reg  [31:0] exMem_aluResult;
+  reg  [31:0] exMem_writebackValue;
+  reg  [31:0] exMem_storeData;
+  reg  [4:0]  exMem_rd;
+  reg  [2:0]  exMem_funct3;
+  reg         exMem_regWrite;
+  reg         exMem_memLoad;
+  reg         exMem_memStore;
+  reg         exMem_csr;
+  reg         exMem_csrWrite;
+  reg         exMem_csrSet;
+  reg         exMem_csrClear;
+  reg  [11:0] exMem_csrAddr;
+  reg  [31:0] exMem_csrOpValue;
+  reg         memWb_valid;
+  reg  [31:0] memWb_pc;
+  reg  [31:0] memWb_value;
+  reg  [4:0]  memWb_rd;
+  reg         memWb_regWrite;
+  reg         memWb_csr;
+  reg         memWb_csrWrite;
+  reg         memWb_csrSet;
+  reg         memWb_csrClear;
+  reg  [11:0] memWb_csrAddr;
+  reg  [31:0] memWb_csrOpValue;
+  wire        _memWbForwardable_T = memWb_valid & memWb_regWrite;
+  wire [31:0] decodeRs2 =
+    _memWbForwardable_T & (|memWb_rd) & memWb_rd == _idu_io_rs2addr
+      ? memWb_value
+      : _gpr_io_rs2data;
+  wire        exMemForwardable =
+    exMem_valid & exMem_regWrite & ~exMem_memLoad & (|exMem_rd);
+  wire        memWbForwardable = _memWbForwardable_T & (|memWb_rd);
+  wire [31:0] exRs1 =
+    exMemForwardable & exMem_rd == idEx_rs1addr
+      ? exMem_writebackValue
+      : memWbForwardable & memWb_rd == idEx_rs1addr ? memWb_value : idEx_rs1;
+  wire [31:0] exRs2 =
+    exMemForwardable & exMem_rd == idEx_rs2addr
+      ? exMem_writebackValue
+      : memWbForwardable & memWb_rd == idEx_rs2addr ? memWb_value : idEx_rs2;
+  wire [31:0] exA = idEx_auipc | idEx_jal | idEx_branch ? idEx_pc : exRs1;
+  wire [31:0] exB =
+    idEx_regWrite & ~idEx_memStore & ~idEx_branch & ~idEx_jal & ~idEx_rType | idEx_jal
+    | idEx_branch | idEx_auipc | idEx_memLoad | idEx_memStore
+      ? idEx_imm
+      : exRs2;
+  wire        mulDivActive = idEx_valid & idEx_muldiv;
+  wire        executeStall = mulDivActive & ~_mulDiv_io_done;
+  wire        _branchTaken_T_11 = idEx_funct3 == 3'h0 & exRs1 == exRs2;
+  wire [7:0]  _GEN =
+    {{exRs1 >= exRs2},
+     {exRs1 < exRs2},
+     {$signed(exRs1) >= $signed(exRs2)},
+     {$signed(exRs1) < $signed(exRs2)},
+     {_branchTaken_T_11},
+     {_branchTaken_T_11},
+     {exRs1 != exRs2},
+     {_branchTaken_T_11}};
+  wire        _systemInFlight_T_5 = memWb_valid & memWb_csr;
+  wire        _exWritebackValue_T = idEx_jal | idEx_jalr;
+  wire        redirect =
+    idEx_valid & ~executeStall
+    & (_exWritebackValue_T | idEx_ecall | idEx_mret | idEx_branch & _GEN[idEx_funct3]);
+  wire        memOperation = exMem_memLoad | exMem_memStore;
+  wire        memoryStall =
+    exMem_valid & memOperation
+    & ~(~exMem_valid | ~memOperation | _lsu_io_loadDone | _lsu_io_storeDone);
+  wire        systemInFlight =
+    idEx_valid & (idEx_csr | idEx_ecall | idEx_mret) | exMem_valid & exMem_csr
+    | _systemInFlight_T_5;
+  wire        fetchAllowed =
+    ~fetch_pending & ~fetch_responseValid & ~ifId_valid & ~memoryStall & ~executeStall
+    & ~systemInFlight & ~redirect;
   always @(posedge cpu_clk) begin
-    if (cpu_rst)
-      memRd <= 5'h0;
-    else if (issueMemory)
-      memRd <= _idu_io_rdaddr;
+    if (cpu_rst) begin
+      fetch_pc <= 32'h0;
+      fetch_pending <= 1'h0;
+      fetch_dropResponse <= 1'h0;
+      fetch_responseValid <= 1'h0;
+      fetch_responsePc <= 32'h0;
+      fetch_responseInst <= 32'h0;
+      ifId_valid <= 1'h0;
+      ifId_pc <= 32'h0;
+      ifId_inst <= 32'h0;
+      idEx_valid <= 1'h0;
+      idEx_pc <= 32'h0;
+      idEx_rs1 <= 32'h0;
+      idEx_rs2 <= 32'h0;
+      idEx_imm <= 32'h0;
+      idEx_rd <= 5'h0;
+      idEx_rs1addr <= 5'h0;
+      idEx_rs2addr <= 5'h0;
+      idEx_funct3 <= 3'h0;
+      idEx_regWrite <= 1'h0;
+      idEx_rType <= 1'h0;
+      idEx_memLoad <= 1'h0;
+      idEx_memStore <= 1'h0;
+      idEx_branch <= 1'h0;
+      idEx_jal <= 1'h0;
+      idEx_jalr <= 1'h0;
+      idEx_auipc <= 1'h0;
+      idEx_csr <= 1'h0;
+      idEx_csrWrite <= 1'h0;
+      idEx_csrSet <= 1'h0;
+      idEx_csrClear <= 1'h0;
+      idEx_csrAddr <= 12'h0;
+      idEx_ecall <= 1'h0;
+      idEx_mret <= 1'h0;
+      idEx_muldiv <= 1'h0;
+      idEx_aluAdd <= 1'h0;
+      idEx_aluLh20 <= 1'h0;
+      idEx_aluSub <= 1'h0;
+      idEx_aluSlt <= 1'h0;
+      idEx_aluSltu <= 1'h0;
+      idEx_aluXor <= 1'h0;
+      idEx_aluOr <= 1'h0;
+      idEx_aluAnd <= 1'h0;
+      idEx_aluSll <= 1'h0;
+      idEx_aluSrl <= 1'h0;
+      idEx_aluSra <= 1'h0;
+      exMem_valid <= 1'h0;
+      exMem_pc <= 32'h0;
+      exMem_aluResult <= 32'h0;
+      exMem_writebackValue <= 32'h0;
+      exMem_storeData <= 32'h0;
+      exMem_rd <= 5'h0;
+      exMem_funct3 <= 3'h0;
+      exMem_regWrite <= 1'h0;
+      exMem_memLoad <= 1'h0;
+      exMem_memStore <= 1'h0;
+      exMem_csr <= 1'h0;
+      exMem_csrWrite <= 1'h0;
+      exMem_csrSet <= 1'h0;
+      exMem_csrClear <= 1'h0;
+      exMem_csrAddr <= 12'h0;
+      exMem_csrOpValue <= 32'h0;
+      memWb_valid <= 1'h0;
+      memWb_pc <= 32'h0;
+      memWb_value <= 32'h0;
+      memWb_rd <= 5'h0;
+      memWb_regWrite <= 1'h0;
+      memWb_csr <= 1'h0;
+      memWb_csrWrite <= 1'h0;
+      memWb_csrSet <= 1'h0;
+      memWb_csrClear <= 1'h0;
+      memWb_csrAddr <= 12'h0;
+      memWb_csrOpValue <= 32'h0;
+    end
+    else begin
+      automatic logic _decodeUsesRs2_T = ifId_inst[6:0] == 7'h33;
+      automatic logic _decodeUsesRs2_T_1 = ifId_inst[6:0] == 7'h23;
+      automatic logic _decodeUsesRs2_T_3 = ifId_inst[6:0] == 7'h63;
+      automatic logic loadUseStall;
+      automatic logic csrStall;
+      automatic logic _GEN_0 = memoryStall | executeStall;
+      automatic logic _GEN_1;
+      automatic logic _GEN_2;
+      automatic logic _GEN_3;
+      automatic logic _GEN_4;
+      loadUseStall =
+        ifId_valid & idEx_valid & idEx_memLoad & (|idEx_rd)
+        & ((_decodeUsesRs2_T | ifId_inst[6:0] == 7'h13 | ifId_inst[6:0] == 7'h3
+            | _decodeUsesRs2_T_1 | _decodeUsesRs2_T_3 | ifId_inst[6:0] == 7'h67
+            | ifId_inst[6:0] == 7'h73 & (|(ifId_inst[14:12])))
+           & idEx_rd == _idu_io_rs1addr
+           | (_decodeUsesRs2_T | _decodeUsesRs2_T_1 | _decodeUsesRs2_T_3)
+           & idEx_rd == _idu_io_rs2addr);
+      csrStall =
+        ifId_valid & (_idu_io_csr | _idu_io_ecall | _idu_io_mret)
+        & (idEx_valid | exMem_valid | memWb_valid);
+      _GEN_1 = redirect | loadUseStall;
+      _GEN_2 = loadUseStall | csrStall;
+      _GEN_3 = ifetch_valid & fetch_pending;
+      _GEN_4 =
+        fetch_responseValid & ~memoryStall & ~executeStall & ~systemInFlight
+        & ~ifId_valid;
+      if (redirect) begin
+        fetch_pc <=
+          idEx_ecall | idEx_mret
+            ? _csr_io_readval
+            : idEx_jalr ? exRs1 + idEx_imm & 32'hFFFFFFFE : idEx_pc + idEx_imm;
+        fetch_dropResponse <= fetch_pending | fetch_dropResponse;
+      end
+      else begin
+        if (_GEN_3 | _GEN_4 | ~fetchAllowed) begin
+        end
+        else
+          fetch_pc <= fetch_pc + 32'h4;
+        fetch_pending <= ~_GEN_3 & (~_GEN_4 & fetchAllowed | fetch_pending);
+        fetch_dropResponse <= ~_GEN_3 & fetch_dropResponse;
+      end
+      fetch_responseValid <=
+        ~redirect
+        & (_GEN_3
+             ? ~fetch_dropResponse | fetch_responseValid
+             : ~_GEN_4 & fetch_responseValid);
+      if (redirect | ~(_GEN_3 & ~fetch_dropResponse)) begin
+      end
+      else begin
+        fetch_responsePc <= fetch_pc - 32'h4;
+        fetch_responseInst <= ifetch_inst;
+      end
+      if (~_GEN_0) begin
+        automatic logic [31:0] exAluResult =
+          idEx_muldiv ? _mulDiv_io_result : _exu_io_result;
+        automatic logic        decodeAdvance;
+        decodeAdvance =
+          ifId_valid & ~memoryStall & ~executeStall & ~loadUseStall & ~csrStall
+          & ~systemInFlight & ~redirect;
+        ifId_valid <=
+          ~redirect
+          & (_GEN_2 ? ifId_valid : fetch_responseValid | ~decodeAdvance & ifId_valid);
+        idEx_valid <= ~_GEN_1 & decodeAdvance;
+        exMem_valid <= idEx_valid;
+        exMem_pc <= idEx_pc;
+        exMem_aluResult <= exAluResult;
+        exMem_writebackValue <=
+          _exWritebackValue_T
+            ? idEx_pc + 32'h4
+            : idEx_csr ? _csr_io_readval : exAluResult;
+        exMem_storeData <= exRs2;
+        exMem_rd <= idEx_rd;
+        exMem_funct3 <= idEx_funct3;
+        exMem_regWrite <= idEx_regWrite;
+        exMem_memLoad <= idEx_memLoad;
+        exMem_memStore <= idEx_memStore;
+        exMem_csr <= idEx_csr;
+        exMem_csrWrite <= idEx_csrWrite;
+        exMem_csrSet <= idEx_csrSet;
+        exMem_csrClear <= idEx_csrClear;
+        exMem_csrAddr <= idEx_csrAddr;
+        exMem_csrOpValue <= exRs1;
+        memWb_valid <= exMem_valid & ~exMem_memStore;
+        memWb_pc <= exMem_pc;
+        memWb_value <= exMem_memLoad ? _lsu_io_loadData : exMem_writebackValue;
+        memWb_rd <= exMem_rd;
+        memWb_regWrite <= exMem_regWrite;
+        memWb_csr <= exMem_csr;
+        memWb_csrWrite <= exMem_csrWrite;
+        memWb_csrSet <= exMem_csrSet;
+        memWb_csrClear <= exMem_csrClear;
+        memWb_csrAddr <= exMem_csrAddr;
+        memWb_csrOpValue <= exMem_csrOpValue;
+      end
+      if (_GEN_0 | redirect | _GEN_2 | ~fetch_responseValid) begin
+      end
+      else begin
+        ifId_pc <= fetch_responsePc;
+        ifId_inst <= fetch_responseInst;
+      end
+      if (~(_GEN_0 | _GEN_1)) begin
+        idEx_pc <= ifId_pc;
+        idEx_rs1 <=
+          _memWbForwardable_T & (|memWb_rd) & memWb_rd == _idu_io_rs1addr
+            ? memWb_value
+            : _gpr_io_rs1data;
+        idEx_rs2 <= decodeRs2;
+        idEx_imm <= _idu_io_alu_b;
+        idEx_rd <= _idu_io_rdaddr;
+        idEx_rs1addr <= _idu_io_rs1addr;
+        idEx_rs2addr <= _idu_io_rs2addr;
+        idEx_funct3 <= ifId_inst[14:12];
+        idEx_regWrite <=
+          ~_idu_io_S
+          & (_idu_io_R | _idu_io_I | _idu_io_U | _idu_io_J | _idu_io_mem_load
+             | _idu_io_csr);
+        idEx_rType <= _idu_io_R;
+        idEx_memLoad <= _idu_io_mem_load;
+        idEx_memStore <= _idu_io_S;
+        idEx_branch <= _idu_io_B;
+        idEx_jal <= _idu_io_J;
+        idEx_jalr <= _idu_io_jalr;
+        idEx_auipc <= _idu_io_auipc;
+        idEx_csr <= _idu_io_csr;
+        idEx_csrWrite <= _idu_io_csr_write;
+        idEx_csrSet <= _idu_io_csr_set;
+        idEx_csrClear <= _idu_io_csr_clear;
+        idEx_csrAddr <= _idu_io_csraddr;
+        idEx_ecall <= _idu_io_ecall;
+        idEx_mret <= _idu_io_mret;
+        idEx_muldiv <= _idu_io_muldiv;
+        idEx_aluAdd <= _idu_io_alu_add;
+        idEx_aluLh20 <= _idu_io_alu_lh20;
+        idEx_aluSub <= _idu_io_alu_sub;
+        idEx_aluSlt <= _idu_io_alu_slt;
+        idEx_aluSltu <= _idu_io_alu_sltu;
+        idEx_aluXor <= _idu_io_alu_xor;
+        idEx_aluOr <= _idu_io_alu_or;
+        idEx_aluAnd <= _idu_io_alu_and;
+        idEx_aluSll <= _idu_io_alu_sll;
+        idEx_aluSrl <= _idu_io_alu_srl;
+        idEx_aluSra <= _idu_io_alu_sra;
+      end
+    end
   end // always @(posedge)
-  IFU ifu (
-    .clock             (cpu_clk),
-    .reset             (cpu_rst),
-    .io_out_ready      (_ifu_io_out_ready_T_3),
-    .io_out_valid      (_ifu_io_out_valid),
-    .io_out_bits_inst  (_ifu_io_out_bits_inst),
-    .io_out_bits_pc    (_ifu_io_out_bits_pc),
-    .io_cacheReq       (ifetch_req),
-    .io_cacheAddr      (ifetch_addr),
-    .io_cacheRespValid (ifetch_valid),
-    .io_cacheRespInst  (ifetch_inst),
-    .io_jump
-      (ifuFire
-       & (_idu_io_dobranch | _idu_io_J | _idu_io_jalr | _idu_io_ecall | _idu_io_mret)),
-    .io_jumptarget     (_idu_io_mret ? _csr_io_readval : aluResult),
-    .io_stall          (_lsu_io_busy | mulDivActive & ~_mulDiv_io_done)
-  );
   IDU idu (
-    .io_inst          (_ifu_io_out_bits_inst),
-    .io_pc            (_ifu_io_out_bits_pc),
-    .io_rs1data       (_gpr_io_rs1data),
-    .io_rs2data       (_gpr_io_rs2data),
-    .io_jalr          (_idu_io_jalr),
-    .io_ecall         (_idu_io_ecall),
-    .io_mret          (_idu_io_mret),
-    .io_dobranch      (_idu_io_dobranch),
-    .io_I             (_idu_io_I),
-    .io_S             (_idu_io_S),
-    .io_U             (_idu_io_U),
-    .io_J             (_idu_io_J),
-    .io_R             (_idu_io_R),
-    .io_rs1addr       (_idu_io_rs1addr),
-    .io_rs2addr       (_idu_io_rs2addr),
-    .io_rdaddr        (_idu_io_rdaddr),
-    .io_alu_add       (_idu_io_alu_add),
-    .io_alu_lh20      (_idu_io_alu_lh20),
-    .io_alu_sub       (_idu_io_alu_sub),
-    .io_alu_slt       (_idu_io_alu_slt),
-    .io_alu_sltu      (_idu_io_alu_sltu),
-    .io_alu_xor       (_idu_io_alu_xor),
-    .io_alu_or        (_idu_io_alu_or),
-    .io_alu_and       (_idu_io_alu_and),
-    .io_alu_sll       (_idu_io_alu_sll),
-    .io_alu_srl       (_idu_io_alu_srl),
-    .io_alu_sra       (_idu_io_alu_sra),
-    .io_muldiv        (_idu_io_muldiv),
-    .io_muldiv_funct3 (_idu_io_muldiv_funct3),
-    .io_alu_a         (_idu_io_alu_a),
-    .io_alu_b         (_idu_io_alu_b),
-    .io_mem_load      (_idu_io_mem_load),
-    .io_csr           (_idu_io_csr),
-    .io_csr_write     (_idu_io_csr_write),
-    .io_csr_set       (_idu_io_csr_set),
-    .io_csr_clear     (_idu_io_csr_clear),
-    .io_csraddr       (_idu_io_csraddr)
+    .io_inst      (ifId_inst),
+    .io_rs2data   (decodeRs2),
+    .io_jalr      (_idu_io_jalr),
+    .io_auipc     (_idu_io_auipc),
+    .io_ecall     (_idu_io_ecall),
+    .io_mret      (_idu_io_mret),
+    .io_I         (_idu_io_I),
+    .io_S         (_idu_io_S),
+    .io_B         (_idu_io_B),
+    .io_U         (_idu_io_U),
+    .io_J         (_idu_io_J),
+    .io_R         (_idu_io_R),
+    .io_rs1addr   (_idu_io_rs1addr),
+    .io_rs2addr   (_idu_io_rs2addr),
+    .io_rdaddr    (_idu_io_rdaddr),
+    .io_alu_add   (_idu_io_alu_add),
+    .io_alu_lh20  (_idu_io_alu_lh20),
+    .io_alu_sub   (_idu_io_alu_sub),
+    .io_alu_slt   (_idu_io_alu_slt),
+    .io_alu_sltu  (_idu_io_alu_sltu),
+    .io_alu_xor   (_idu_io_alu_xor),
+    .io_alu_or    (_idu_io_alu_or),
+    .io_alu_and   (_idu_io_alu_and),
+    .io_alu_sll   (_idu_io_alu_sll),
+    .io_alu_srl   (_idu_io_alu_srl),
+    .io_alu_sra   (_idu_io_alu_sra),
+    .io_muldiv    (_idu_io_muldiv),
+    .io_alu_b     (_idu_io_alu_b),
+    .io_mem_load  (_idu_io_mem_load),
+    .io_csr       (_idu_io_csr),
+    .io_csr_write (_idu_io_csr_write),
+    .io_csr_set   (_idu_io_csr_set),
+    .io_csr_clear (_idu_io_csr_clear),
+    .io_csraddr   (_idu_io_csraddr)
   );
   EXU exu (
-    .io_a      (_idu_io_alu_a),
-    .io_b      (_idu_io_alu_b),
-    .io_add    (_idu_io_alu_add),
-    .io_lh20   (_idu_io_alu_lh20),
-    .io_sub    (_idu_io_alu_sub),
-    .io_slt    (_idu_io_alu_slt),
-    .io_sltu   (_idu_io_alu_sltu),
-    .io_xor    (_idu_io_alu_xor),
-    .io_or     (_idu_io_alu_or),
-    .io_and    (_idu_io_alu_and),
-    .io_sll    (_idu_io_alu_sll),
-    .io_srl    (_idu_io_alu_srl),
-    .io_sra    (_idu_io_alu_sra),
+    .io_a      (exA),
+    .io_b      (exB),
+    .io_add    (idEx_aluAdd),
+    .io_lh20   (idEx_aluLh20),
+    .io_sub    (idEx_aluSub),
+    .io_slt    (idEx_aluSlt),
+    .io_sltu   (idEx_aluSltu),
+    .io_xor    (idEx_aluXor),
+    .io_or     (idEx_aluOr),
+    .io_and    (idEx_aluAnd),
+    .io_sll    (idEx_aluSll),
+    .io_srl    (idEx_aluSrl),
+    .io_sra    (idEx_aluSra),
     .io_result (_exu_io_result)
   );
   MulDiv mulDiv (
     .clock     (cpu_clk),
     .reset     (cpu_rst),
     .io_start  (mulDivActive & ~_mulDiv_io_busy & ~_mulDiv_io_done),
-    .io_funct3 (_idu_io_muldiv_funct3),
-    .io_a      (_idu_io_alu_a),
-    .io_b      (_idu_io_alu_b),
+    .io_funct3 (idEx_funct3),
+    .io_a      (exA),
+    .io_b      (exB),
     .io_busy   (_mulDiv_io_busy),
     .io_done   (_mulDiv_io_done),
     .io_result (_mulDiv_io_result)
@@ -170,11 +474,11 @@ module cpu_core(
   LSU lsu (
     .clock             (cpu_clk),
     .reset             (cpu_rst),
-    .io_exuResult      (aluResult),
-    .io_funct3         (_ifu_io_out_bits_inst[14:12]),
-    .io_gprRs2Data     (_gpr_io_rs2data),
-    .io_load           (issueMemory & _idu_io_mem_load),
-    .io_store          (issueMemory & _idu_io_S),
+    .io_exuResult      (exMem_aluResult),
+    .io_funct3         (exMem_funct3),
+    .io_gprRs2Data     (exMem_storeData),
+    .io_load           (exMem_valid & exMem_memLoad & ~_lsu_io_busy),
+    .io_store          (exMem_valid & exMem_memStore & ~_lsu_io_busy),
     .io_cacheReq       (_lsu_io_cacheReq),
     .io_cacheWrite     (_lsu_io_cacheWrite),
     .io_cacheAddr      (daccess_addr),
@@ -184,51 +488,42 @@ module cpu_core(
     .io_cacheRespData  (daccess_rdata),
     .io_loadData       (_lsu_io_loadData),
     .io_busy           (_lsu_io_busy),
-    .io_loadDone       (_lsu_io_loadDone)
-  );
-  WBU wbu (
-    .io_exuresult      (aluResult),
-    .io_mem_rdata      (_lsu_io_loadData),
-    .io_pc             (_ifu_io_out_bits_pc),
-    .io_mem_load       (_idu_io_mem_load),
-    .io_J              (_idu_io_J),
-    .io_jalr           (_idu_io_jalr),
-    .io_csr            (_idu_io_csr),
-    .io_csrval         (_csr_io_readval),
-    .io_writeback_data (_wbu_io_writeback_data)
+    .io_loadDone       (_lsu_io_loadDone),
+    .io_storeDone      (_lsu_io_storeDone)
   );
   GPR gpr (
     .clock      (cpu_clk),
     .reset      (cpu_rst),
     .io_rs1addr (_idu_io_rs1addr),
     .io_rs2addr (_idu_io_rs2addr),
-    .io_rdaddr  (_lsu_io_loadDone ? memRd : _idu_io_rdaddr),
+    .io_rdaddr  (memWb_rd),
     .io_rs1data (_gpr_io_rs1data),
     .io_rs2data (_gpr_io_rs2data),
-    .io_rddata  (_lsu_io_loadDone ? _lsu_io_loadData : _wbu_io_writeback_data),
-    .io_we
-      (ifuFire & ~memOperation & ~_idu_io_S
-       & (_idu_io_R | _idu_io_I | _idu_io_U | _idu_io_J | _idu_io_mem_load | _idu_io_csr)
-       | _lsu_io_loadDone)
+    .io_rddata  (memWb_value),
+    .io_we      (_memWbForwardable_T & (|memWb_rd))
   );
   CSR csr (
     .clock      (cpu_clk),
     .reset      (cpu_rst),
-    .io_addr    (_idu_io_csraddr),
-    .io_op_val  (_gpr_io_rs1data),
-    .io_write   (_csr_io_we_T & ~memOperation),
-    .io_set     (_idu_io_csr_set),
-    .io_ecall   (_idu_io_ecall & ifuFire & ~memOperation),
-    .io_mret    (_idu_io_mret & ifuFire & ~memOperation),
-    .io_clear   (_idu_io_csr_clear),
-    .io_pc      (_ifu_io_out_bits_pc),
-    .io_we      (_csr_io_we_T & ~memOperation),
+    .io_addr    (_systemInFlight_T_5 ? memWb_csrAddr : idEx_csrAddr),
+    .io_op_val  (_systemInFlight_T_5 ? memWb_csrOpValue : exRs1),
+    .io_write   (_systemInFlight_T_5 & memWb_csrWrite),
+    .io_set     (_systemInFlight_T_5 & memWb_csrSet),
+    .io_ecall   (idEx_valid & idEx_ecall),
+    .io_mret    (idEx_valid & idEx_mret),
+    .io_clear   (_systemInFlight_T_5 & memWb_csrClear),
+    .io_pc      (idEx_pc),
+    .io_we      (_systemInFlight_T_5 & (memWb_csrWrite | memWb_csrSet | memWb_csrClear)),
     .io_readval (_csr_io_readval)
   );
+  assign ifetch_req = fetchAllowed;
+  assign ifetch_addr = fetch_pc;
   assign daccess_ren = {4{_lsu_io_cacheReq & ~_lsu_io_cacheWrite}};
   assign daccess_wen = _lsu_io_cacheReq & _lsu_io_cacheWrite ? _lsu_io_cacheWStrb : 4'h0;
 
 `ifdef RUN_TRACE
+  // Pipeline trace points.  WB observes the instruction retiring from MEM/WB;
+  // memory observes a store only while the LSU issues its DCache request.
   wire [31:0] debug_wb_pc    /* verilator public */ ;
   wire        debug_wb_rf_we /* verilator public */ ;
   wire [4:0]  debug_wb_rf_wR /* verilator public */ ;
@@ -237,16 +532,17 @@ module cpu_core(
   wire [3:0]  debug_mem_we    /* verilator public */ ;
   wire [31:0] debug_mem_waddr /* verilator public */ ;
   wire [31:0] debug_mem_wdata /* verilator public */ ;
+  wire        trace_wb_valid;
+  wire        trace_mem_store;
 
-  assign debug_wb_pc = _ifu_io_out_bits_pc;
-  assign debug_wb_rf_we =
-    ifuFire & ~memOperation & ~_idu_io_S
-    & (_idu_io_R | _idu_io_I | _idu_io_U | _idu_io_J | _idu_io_mem_load | _idu_io_csr)
-    | _lsu_io_loadDone;
-  assign debug_wb_rf_wR = _lsu_io_loadDone ? memRd : _idu_io_rdaddr;
-  assign debug_wb_rf_wD = _lsu_io_loadDone ? _lsu_io_loadData : _wbu_io_writeback_data;
-  assign debug_mem_pc = _ifu_io_out_bits_pc;
-  assign debug_mem_we = daccess_wen;
+  assign trace_wb_valid = memWb_valid;
+  assign trace_mem_store = exMem_valid & exMem_memStore & (|daccess_wen);
+  assign debug_wb_pc = trace_wb_valid ? memWb_pc : 32'h0;
+  assign debug_wb_rf_we = trace_wb_valid & memWb_regWrite & (|memWb_rd);
+  assign debug_wb_rf_wR = memWb_rd;
+  assign debug_wb_rf_wD = memWb_value;
+  assign debug_mem_pc = trace_mem_store ? exMem_pc : 32'h0;
+  assign debug_mem_we = trace_mem_store ? daccess_wen : 4'h0;
   assign debug_mem_waddr = daccess_addr;
   assign debug_mem_wdata = daccess_wdata;
 `endif

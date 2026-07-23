@@ -13,6 +13,8 @@ object Generate extends App {
   private val verilogHeader = "`timescale 1ns / 1ps\n\n`include \"defines.vh\"\n\n"
   private val runTraceBlock = """
 `ifdef RUN_TRACE
+  // Pipeline trace points.  WB observes the instruction retiring from MEM/WB;
+  // memory observes a store only while the LSU issues its DCache request.
   wire [31:0] debug_wb_pc    /* verilator public */ ;
   wire        debug_wb_rf_we /* verilator public */ ;
   wire [4:0]  debug_wb_rf_wR /* verilator public */ ;
@@ -21,16 +23,17 @@ object Generate extends App {
   wire [3:0]  debug_mem_we    /* verilator public */ ;
   wire [31:0] debug_mem_waddr /* verilator public */ ;
   wire [31:0] debug_mem_wdata /* verilator public */ ;
+  wire        trace_wb_valid;
+  wire        trace_mem_store;
 
-  assign debug_wb_pc = _ifu_io_out_bits_pc;
-  assign debug_wb_rf_we =
-    ifuFire & ~memOperation & ~_idu_io_S
-    & (_idu_io_R | _idu_io_I | _idu_io_U | _idu_io_J | _idu_io_mem_load | _idu_io_csr)
-    | _lsu_io_loadDone;
-  assign debug_wb_rf_wR = _lsu_io_loadDone ? memRd : _idu_io_rdaddr;
-  assign debug_wb_rf_wD = _lsu_io_loadDone ? _lsu_io_loadData : _wbu_io_writeback_data;
-  assign debug_mem_pc = _ifu_io_out_bits_pc;
-  assign debug_mem_we = daccess_wen;
+  assign trace_wb_valid = memWb_valid;
+  assign trace_mem_store = exMem_valid & exMem_memStore & (|daccess_wen);
+  assign debug_wb_pc = trace_wb_valid ? memWb_pc : 32'h0;
+  assign debug_wb_rf_we = trace_wb_valid & memWb_regWrite & (|memWb_rd);
+  assign debug_wb_rf_wR = memWb_rd;
+  assign debug_wb_rf_wD = memWb_value;
+  assign debug_mem_pc = trace_mem_store ? exMem_pc : 32'h0;
+  assign debug_mem_we = trace_mem_store ? daccess_wen : 4'h0;
   assign debug_mem_waddr = daccess_addr;
   assign debug_mem_wdata = daccess_wdata;
 `endif

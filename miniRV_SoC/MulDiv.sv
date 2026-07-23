@@ -16,66 +16,141 @@ module MulDiv(
 );
 
   reg        running;
-  reg [5:0]  remainingCycles;
+  reg [4:0]  iteration;
   reg        donePulse;
   reg [31:0] resultReg;
+  reg [2:0]  opReg;
+  reg        multiplyReg;
+  reg        negateQuotientReg;
+  reg        negateRemainderReg;
+  reg        divideByZeroReg;
+  reg        signedOverflowReg;
+  reg [31:0] operandAReg;
+  reg [63:0] multiplicandReg;
+  reg [31:0] multiplierReg;
+  reg [63:0] productReg;
+  reg [31:0] dividendReg;
+  reg [31:0] divisorReg;
+  reg [32:0] remainderReg;
+  reg [31:0] quotientReg;
   always @(posedge clock) begin
     if (reset) begin
       running <= 1'h0;
-      remainingCycles <= 6'h0;
+      iteration <= 5'h0;
       donePulse <= 1'h0;
       resultReg <= 32'h0;
+      opReg <= 3'h0;
+      multiplyReg <= 1'h0;
+      negateQuotientReg <= 1'h0;
+      negateRemainderReg <= 1'h0;
+      divideByZeroReg <= 1'h0;
+      signedOverflowReg <= 1'h0;
+      operandAReg <= 32'h0;
+      multiplicandReg <= 64'h0;
+      multiplierReg <= 32'h0;
+      productReg <= 64'h0;
+      dividendReg <= 32'h0;
+      divisorReg <= 32'h0;
+      remainderReg <= 33'h0;
+      quotientReg <= 32'h0;
     end
     else begin
-      automatic logic _GEN;
-      _GEN = remainingCycles == 6'h1;
+      automatic logic [31:0] _bMagnitude_T_2;
+      automatic logic        signedDivide;
+      automatic logic        operandANegative;
+      automatic logic        operandBNegative;
+      automatic logic        aNegative;
+      automatic logic [63:0] _productNext_T_2;
+      automatic logic [32:0] shiftedRemainder;
+      automatic logic        subtract;
+      automatic logic [32:0] _remainderNext_T;
+      automatic logic [31:0] quotientNext;
+      automatic logic        _GEN = running & (&iteration);
+      _bMagnitude_T_2 = ~io_b + 32'h1;
+      signedDivide = io_funct3 == 3'h4 | io_funct3 == 3'h6;
+      operandANegative = io_funct3 != 3'h3 & io_a[31];
+      operandBNegative = (io_funct3 == 3'h0 | io_funct3 == 3'h1) & io_b[31];
+      aNegative = signedDivide & io_a[31];
+      _productNext_T_2 = productReg + (multiplierReg[0] ? multiplicandReg : 64'h0);
+      shiftedRemainder = {remainderReg[31:0], dividendReg[31]};
+      subtract = shiftedRemainder >= {1'h0, divisorReg};
+      _remainderNext_T = {remainderReg[31:0], dividendReg[31]} - {1'h0, divisorReg};
+      quotientNext = {quotientReg[30:0], subtract};
       if (running) begin
-        running <= ~_GEN & running;
-        if (_GEN)
-          remainingCycles <= 6'h0;
-        else
-          remainingCycles <= remainingCycles - 6'h1;
+        running <= ~(&iteration) & running;
+        if (~(&iteration))
+          iteration <= multiplyReg ? iteration + 5'h1 : iteration + 5'h1;
+        if (multiplyReg) begin
+          multiplicandReg <= {multiplicandReg[62:0], 1'h0};
+          multiplierReg <= {1'h0, multiplierReg[31:1]};
+          productReg <= _productNext_T_2;
+        end
+        else begin
+          dividendReg <= {dividendReg[30:0], 1'h0};
+          if (subtract)
+            remainderReg <= _remainderNext_T;
+          else
+            remainderReg <= shiftedRemainder;
+          quotientReg <= quotientNext;
+        end
       end
       else begin
         running <= io_start | running;
-        if (io_start)
-          remainingCycles <= 6'h20;
+        if (io_start) begin
+          automatic logic [31:0] _aMagnitude_T_2 = ~io_a + 32'h1;
+          iteration <= 5'h0;
+          multiplicandReg <=
+            io_funct3[2]
+              ? 64'h0
+              : {32'h0, operandANegative & io_a[31] ? _aMagnitude_T_2 : io_a};
+          multiplierReg <=
+            io_funct3[2] ? 32'h0 : operandBNegative & io_b[31] ? _bMagnitude_T_2 : io_b;
+          productReg <= 64'h0;
+          dividendReg <=
+            io_funct3[2] ? (aNegative & io_a[31] ? _aMagnitude_T_2 : io_a) : 32'h0;
+          remainderReg <= 33'h0;
+          quotientReg <= 32'h0;
+        end
       end
-      donePulse <= running & _GEN;
+      donePulse <= _GEN;
+      if (_GEN) begin
+        automatic logic [63:0] signedProduct;
+        automatic logic [31:0] remainderNext;
+        signedProduct = negateQuotientReg ? ~_productNext_T_2 + 64'h1 : _productNext_T_2;
+        remainderNext =
+          subtract ? _remainderNext_T[31:0] : {remainderReg[30:0], dividendReg[31]};
+        resultReg <=
+          multiplyReg
+            ? (opReg == 3'h3
+                 ? _productNext_T_2[63:32]
+                 : opReg == 3'h2 | opReg == 3'h1
+                     ? signedProduct[63:32]
+                     : signedProduct[31:0])
+            : opReg == 3'h4 | opReg == 3'h5
+                ? (divideByZeroReg
+                     ? 32'hFFFFFFFF
+                     : signedOverflowReg
+                         ? operandAReg
+                         : negateQuotientReg ? ~quotientNext + 32'h1 : quotientNext)
+                : divideByZeroReg
+                    ? operandAReg
+                    : signedOverflowReg
+                        ? 32'h0
+                        : negateRemainderReg ? ~remainderNext + 32'h1 : remainderNext;
+      end
       if (~running & io_start) begin
-        automatic logic [63:0]      _GEN_0 = {{32{io_a[31]}}, io_a};
-        automatic logic [63:0]      _signedProduct_T = _GEN_0 * {{32{io_b[31]}}, io_b};
-        automatic logic [63:0]      _GEN_1 = {32'h0, io_b};
-        automatic logic [31:0]      aMagnitude = io_a[31] ? ~io_a + 32'h1 : io_a;
-        automatic logic [31:0]      bMagnitude = io_b[31] ? ~io_b + 32'h1 : io_b;
-        automatic logic [31:0]      signedQuotientMagnitude = aMagnitude / bMagnitude;
-        automatic logic [31:0]      signedRemainderMagnitude = aMagnitude % bMagnitude;
-        automatic logic             signedOverflow = io_a == 32'h80000000 & (&io_b);
-        automatic logic             divideByZero = io_b == 32'h0;
-        automatic logic [63:0]      unsignedProduct = {32'h0, io_a} * _GEN_1;
-        automatic logic [63:0]      _signedUnsignedProduct_T_2 = _GEN_0 * _GEN_1;
-        automatic logic [7:0][31:0] _GEN_2 =
-          {{divideByZero ? io_a : io_a % io_b},
-           {divideByZero
-              ? io_a
-              : signedOverflow
-                  ? 32'h0
-                  : io_a[31]
-                      ? ~signedRemainderMagnitude + 32'h1
-                      : signedRemainderMagnitude},
-           {divideByZero ? 32'hFFFFFFFF : io_a / io_b},
-           {divideByZero
-              ? 32'hFFFFFFFF
-              : signedOverflow
-                  ? io_a
-                  : io_a[31] ^ io_b[31]
-                      ? ~signedQuotientMagnitude + 32'h1
-                      : signedQuotientMagnitude},
-           {unsignedProduct[63:32]},
-           {_signedUnsignedProduct_T_2[63:32]},
-           {_signedProduct_T[63:32]},
-           {_signedProduct_T[31:0]}};
-        resultReg <= _GEN_2[io_funct3];
+        automatic logic bNegative;
+        bNegative = signedDivide & io_b[31];
+        opReg <= io_funct3;
+        multiplyReg <= ~(io_funct3[2]);
+        negateQuotientReg <=
+          io_funct3[2] ? aNegative ^ bNegative : operandANegative ^ operandBNegative;
+        negateRemainderReg <= io_funct3[2] & aNegative;
+        divideByZeroReg <= io_funct3[2] & io_b == 32'h0;
+        signedOverflowReg <= io_funct3[2] & signedDivide & io_a == 32'h80000000 & (&io_b);
+        operandAReg <= io_a;
+        divisorReg <=
+          io_funct3[2] ? (bNegative & io_b[31] ? _bMagnitude_T_2 : io_b) : 32'h0;
       end
     end
   end // always @(posedge)

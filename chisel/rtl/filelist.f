@@ -1,9 +1,7 @@
-IFU.sv
 IDU.sv
 EXU.sv
 MulDiv.sv
 LSU.sv
-WBU.sv
 GPR.sv
 CSR.sv
 cpu_core.sv

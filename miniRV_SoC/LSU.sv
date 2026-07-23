@@ -20,7 +20,8 @@ module LSU(
   input  [31:0] io_cacheRespData,
   output [31:0] io_loadData,
   output        io_busy,
-                io_loadDone
+                io_loadDone,
+                io_storeDone
 );
 
   reg  [1:0]       state;
@@ -88,5 +89,6 @@ module LSU(
   assign io_loadData = response & ~writeReg ? loadValue : loadDataReg;
   assign io_busy = |state;
   assign io_loadDone = response & ~writeReg;
+  assign io_storeDone = response & writeReg;
 endmodule
 
