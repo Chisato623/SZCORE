@@ -43,6 +43,8 @@ class IDU extends Module {
     val alu_divu = Output(Bool())
     val alu_rem = Output(Bool())
     val alu_remu = Output(Bool())
+    val muldiv = Output(Bool())
+    val muldiv_funct3 = Output(UInt(3.W))
     val alu_a     = Output(SInt(32.W))
     val alu_b     = Output(SInt(32.W))
     val mem_load  = Output(Bool())
@@ -166,6 +168,8 @@ class IDU extends Module {
   io.alu_divu  := isDivu
   io.alu_rem   := isRem
   io.alu_remu  := isRemu
+  io.muldiv := isMul || isMulh || isMulsu || isMulu || isDiv || isDivu || isRem || isRemu
+  io.muldiv_funct3 := funct3
   io.csr       := isCsr
   io.csr_write := isWrite
   io.csr_set   := isSet

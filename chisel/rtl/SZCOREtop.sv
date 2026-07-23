@@ -49,6 +49,7 @@ module SZCOREtop(
                 io_pc
 );
 
+  wire        _ifu_io_out_ready_T_3;
   wire        _axiMaster_io_icache_axi_ar_arready;
   wire [31:0] _axiMaster_io_icache_axi_r_rdata;
   wire        _axiMaster_io_icache_axi_r_rlast;
@@ -63,6 +64,7 @@ module SZCOREtop(
   wire        _dcache_io_cpuRespValid;
   wire [31:0] _dcache_io_cpuRespData;
   wire [31:0] _dcache_io_axi_ar_araddr;
+  wire [7:0]  _dcache_io_axi_ar_arlen;
   wire        _dcache_io_axi_ar_arvalid;
   wire        _dcache_io_axi_r_rready;
   wire [31:0] _dcache_io_axi_aw_awaddr;
@@ -88,6 +90,9 @@ module SZCOREtop(
   wire [31:0] _lsu_io_loadData;
   wire        _lsu_io_busy;
   wire        _lsu_io_loadDone;
+  wire        _mulDiv_io_busy;
+  wire        _mulDiv_io_done;
+  wire [31:0] _mulDiv_io_result;
   wire [31:0] _exu_io_result;
   wire        _idu_io_jalr;
   wire        _idu_io_ecall;
@@ -112,14 +117,8 @@ module SZCOREtop(
   wire        _idu_io_alu_sll;
   wire        _idu_io_alu_srl;
   wire        _idu_io_alu_sra;
-  wire        _idu_io_alu_mul;
-  wire        _idu_io_alu_mulh;
-  wire        _idu_io_alu_mulsu;
-  wire        _idu_io_alu_mulu;
-  wire        _idu_io_alu_div;
-  wire        _idu_io_alu_divu;
-  wire        _idu_io_alu_rem;
-  wire        _idu_io_alu_remu;
+  wire        _idu_io_muldiv;
+  wire [2:0]  _idu_io_muldiv_funct3;
   wire [31:0] _idu_io_alu_a;
   wire [31:0] _idu_io_alu_b;
   wire        _idu_io_mem_load;
@@ -133,10 +132,12 @@ module SZCOREtop(
   wire [31:0] _ifu_io_out_bits_pc;
   wire        _ifu_io_cacheReq;
   wire [31:0] _ifu_io_cacheAddr;
-  wire        ifuFire = _ifu_io_out_valid & ~_lsu_io_busy;
+  wire        ifuFire = _ifu_io_out_valid & _ifu_io_out_ready_T_3;
+  wire [31:0] aluResult = _idu_io_muldiv ? _mulDiv_io_result : _exu_io_result;
   wire        memOperation = _idu_io_mem_load | _idu_io_S;
   wire        issueMemory = ifuFire & memOperation;
   reg  [4:0]  memRd;
+  assign _ifu_io_out_ready_T_3 = ~_lsu_io_busy & (~_idu_io_muldiv | _mulDiv_io_done);
   wire        _csr_io_write_T = _idu_io_csr_write & ifuFire;
   always @(posedge io_cpu_clk) begin
     if (io_cpu_rst)
@@ -144,10 +145,10 @@ module SZCOREtop(
     else if (issueMemory)
       memRd <= _idu_io_rdaddr;
   end // always @(posedge)
-  IFU ifu (
+  IFU IFU (
     .clock             (io_cpu_clk),
     .reset             (io_cpu_rst),
-    .io_out_ready      (~_lsu_io_busy),
+    .io_out_ready      (_ifu_io_out_ready_T_3),
     .io_out_valid      (_ifu_io_out_valid),
     .io_out_bits_inst  (_ifu_io_out_bits_inst),
     .io_out_bits_pc    (_ifu_io_out_bits_pc),
@@ -158,55 +159,49 @@ module SZCOREtop(
     .io_jump
       (ifuFire
        & (_idu_io_dobranch | _idu_io_J | _idu_io_jalr | _idu_io_ecall | _idu_io_mret)),
-    .io_jumptarget     (_idu_io_mret ? _csr_io_readval : _exu_io_result),
-    .io_stall          (_lsu_io_busy)
+    .io_jumptarget     (_idu_io_mret ? _csr_io_readval : aluResult),
+    .io_stall          (_lsu_io_busy | _idu_io_muldiv & ~_mulDiv_io_done)
   );
-  IDU idu (
-    .io_inst      (_ifu_io_out_bits_inst),
-    .io_pc        (_ifu_io_out_bits_pc),
-    .io_rs1data   (_gpr_io_rs1data),
-    .io_rs2data   (_gpr_io_rs2data),
-    .io_jalr      (_idu_io_jalr),
-    .io_ecall     (_idu_io_ecall),
-    .io_mret      (_idu_io_mret),
-    .io_dobranch  (_idu_io_dobranch),
-    .io_I         (_idu_io_I),
-    .io_S         (_idu_io_S),
-    .io_U         (_idu_io_U),
-    .io_J         (_idu_io_J),
-    .io_R         (_idu_io_R),
-    .io_rs1addr   (_idu_io_rs1addr),
-    .io_rs2addr   (_idu_io_rs2addr),
-    .io_rdaddr    (_idu_io_rdaddr),
-    .io_alu_add   (_idu_io_alu_add),
-    .io_alu_lh20  (_idu_io_alu_lh20),
-    .io_alu_sub   (_idu_io_alu_sub),
-    .io_alu_slt   (_idu_io_alu_slt),
-    .io_alu_sltu  (_idu_io_alu_sltu),
-    .io_alu_xor   (_idu_io_alu_xor),
-    .io_alu_or    (_idu_io_alu_or),
-    .io_alu_and   (_idu_io_alu_and),
-    .io_alu_sll   (_idu_io_alu_sll),
-    .io_alu_srl   (_idu_io_alu_srl),
-    .io_alu_sra   (_idu_io_alu_sra),
-    .io_alu_mul   (_idu_io_alu_mul),
-    .io_alu_mulh  (_idu_io_alu_mulh),
-    .io_alu_mulsu (_idu_io_alu_mulsu),
-    .io_alu_mulu  (_idu_io_alu_mulu),
-    .io_alu_div   (_idu_io_alu_div),
-    .io_alu_divu  (_idu_io_alu_divu),
-    .io_alu_rem   (_idu_io_alu_rem),
-    .io_alu_remu  (_idu_io_alu_remu),
-    .io_alu_a     (_idu_io_alu_a),
-    .io_alu_b     (_idu_io_alu_b),
-    .io_mem_load  (_idu_io_mem_load),
-    .io_csr       (_idu_io_csr),
-    .io_csr_write (_idu_io_csr_write),
-    .io_csr_set   (_idu_io_csr_set),
-    .io_csr_clear (_idu_io_csr_clear),
-    .io_csraddr   (_idu_io_csraddr)
+  IDU IDU (
+    .io_inst          (_ifu_io_out_bits_inst),
+    .io_pc            (_ifu_io_out_bits_pc),
+    .io_rs1data       (_gpr_io_rs1data),
+    .io_rs2data       (_gpr_io_rs2data),
+    .io_jalr          (_idu_io_jalr),
+    .io_ecall         (_idu_io_ecall),
+    .io_mret          (_idu_io_mret),
+    .io_dobranch      (_idu_io_dobranch),
+    .io_I             (_idu_io_I),
+    .io_S             (_idu_io_S),
+    .io_U             (_idu_io_U),
+    .io_J             (_idu_io_J),
+    .io_R             (_idu_io_R),
+    .io_rs1addr       (_idu_io_rs1addr),
+    .io_rs2addr       (_idu_io_rs2addr),
+    .io_rdaddr        (_idu_io_rdaddr),
+    .io_alu_add       (_idu_io_alu_add),
+    .io_alu_lh20      (_idu_io_alu_lh20),
+    .io_alu_sub       (_idu_io_alu_sub),
+    .io_alu_slt       (_idu_io_alu_slt),
+    .io_alu_sltu      (_idu_io_alu_sltu),
+    .io_alu_xor       (_idu_io_alu_xor),
+    .io_alu_or        (_idu_io_alu_or),
+    .io_alu_and       (_idu_io_alu_and),
+    .io_alu_sll       (_idu_io_alu_sll),
+    .io_alu_srl       (_idu_io_alu_srl),
+    .io_alu_sra       (_idu_io_alu_sra),
+    .io_muldiv        (_idu_io_muldiv),
+    .io_muldiv_funct3 (_idu_io_muldiv_funct3),
+    .io_alu_a         (_idu_io_alu_a),
+    .io_alu_b         (_idu_io_alu_b),
+    .io_mem_load      (_idu_io_mem_load),
+    .io_csr           (_idu_io_csr),
+    .io_csr_write     (_idu_io_csr_write),
+    .io_csr_set       (_idu_io_csr_set),
+    .io_csr_clear     (_idu_io_csr_clear),
+    .io_csraddr       (_idu_io_csraddr)
   );
-  EXU exu (
+  EXU EXU (
     .io_a      (_idu_io_alu_a),
     .io_b      (_idu_io_alu_b),
     .io_add    (_idu_io_alu_add),
@@ -220,20 +215,23 @@ module SZCOREtop(
     .io_sll    (_idu_io_alu_sll),
     .io_srl    (_idu_io_alu_srl),
     .io_sra    (_idu_io_alu_sra),
-    .io_mul    (_idu_io_alu_mul),
-    .io_mulh   (_idu_io_alu_mulh),
-    .io_mulsu  (_idu_io_alu_mulsu),
-    .io_mulu   (_idu_io_alu_mulu),
-    .io_div    (_idu_io_alu_div),
-    .io_divu   (_idu_io_alu_divu),
-    .io_rem    (_idu_io_alu_rem),
-    .io_remu   (_idu_io_alu_remu),
     .io_result (_exu_io_result)
   );
-  LSU lsu (
+  MulDiv MulDiv (
+    .clock     (io_cpu_clk),
+    .reset     (io_cpu_rst),
+    .io_start  (_ifu_io_out_valid & _idu_io_muldiv & ~_mulDiv_io_busy & ~_mulDiv_io_done),
+    .io_funct3 (_idu_io_muldiv_funct3),
+    .io_a      (_idu_io_alu_a),
+    .io_b      (_idu_io_alu_b),
+    .io_busy   (_mulDiv_io_busy),
+    .io_done   (_mulDiv_io_done),
+    .io_result (_mulDiv_io_result)
+  );
+  LSU LSU (
     .clock             (io_cpu_clk),
     .reset             (io_cpu_rst),
-    .io_exuResult      (_exu_io_result),
+    .io_exuResult      (aluResult),
     .io_funct3         (_ifu_io_out_bits_inst[14:12]),
     .io_gprRs2Data     (_gpr_io_rs2data),
     .io_load           (issueMemory & _idu_io_mem_load),
@@ -249,8 +247,8 @@ module SZCOREtop(
     .io_busy           (_lsu_io_busy),
     .io_loadDone       (_lsu_io_loadDone)
   );
-  WBU wbu (
-    .io_exuresult      (_exu_io_result),
+  WBU WBU (
+    .io_exuresult      (aluResult),
     .io_mem_rdata      (_lsu_io_loadData),
     .io_pc             (_ifu_io_out_bits_pc),
     .io_mem_load       (_idu_io_mem_load),
@@ -260,7 +258,7 @@ module SZCOREtop(
     .io_csrval         (_csr_io_readval),
     .io_writeback_data (_wbu_io_writeback_data)
   );
-  GPR gpr (
+  GPR GPR (
     .clock      (io_cpu_clk),
     .reset      (io_cpu_rst),
     .io_rs1addr (_idu_io_rs1addr),
@@ -274,7 +272,7 @@ module SZCOREtop(
        & (_idu_io_R | _idu_io_I | _idu_io_U | _idu_io_J | _idu_io_mem_load | _idu_io_csr)
        | _lsu_io_loadDone)
   );
-  CSR csr (
+  CSR CSR (
     .clock      (io_cpu_clk),
     .reset      (io_cpu_rst),
     .io_addr    (_idu_io_csraddr),
@@ -288,7 +286,7 @@ module SZCOREtop(
     .io_we      (_csr_io_write_T & ~memOperation),
     .io_readval (_csr_io_readval)
   );
-  ICache icache (
+  ICache ICache (
     .clock             (io_cpu_clk),
     .reset             (io_cpu_rst),
     .io_cpuReq         (_ifu_io_cacheReq),
@@ -303,7 +301,7 @@ module SZCOREtop(
     .io_axi_r_rvalid   (_axiMaster_io_icache_axi_r_rvalid),
     .io_axi_r_rready   (_icache_io_axi_r_rready)
   );
-  DCache dcache (
+  DCache DCache (
     .clock             (io_cpu_clk),
     .reset             (io_cpu_rst),
     .io_cpuReq         (_lsu_io_cacheReq),
@@ -314,6 +312,7 @@ module SZCOREtop(
     .io_cpuRespValid   (_dcache_io_cpuRespValid),
     .io_cpuRespData    (_dcache_io_cpuRespData),
     .io_axi_ar_araddr  (_dcache_io_axi_ar_araddr),
+    .io_axi_ar_arlen   (_dcache_io_axi_ar_arlen),
     .io_axi_ar_arvalid (_dcache_io_axi_ar_arvalid),
     .io_axi_ar_arready (_axiMaster_io_lsu_axi_ar_arready),
     .io_axi_r_rdata    (_axiMaster_io_lsu_axi_r_rdata),
@@ -341,6 +340,7 @@ module SZCOREtop(
     .io_icache_axi_r_rvalid   (_axiMaster_io_icache_axi_r_rvalid),
     .io_icache_axi_r_rready   (_icache_io_axi_r_rready),
     .io_lsu_axi_ar_araddr     (_dcache_io_axi_ar_araddr),
+    .io_lsu_axi_ar_arlen      (_dcache_io_axi_ar_arlen),
     .io_lsu_axi_ar_arvalid    (_dcache_io_axi_ar_arvalid),
     .io_lsu_axi_ar_arready    (_axiMaster_io_lsu_axi_ar_arready),
     .io_lsu_axi_r_rdata       (_axiMaster_io_lsu_axi_r_rdata),
@@ -358,6 +358,7 @@ module SZCOREtop(
     .io_lsu_axi_b_bready      (_dcache_io_axi_b_bready),
     .io_pmem_axi_ar_arid      (io_pmem_axi_ar_arid),
     .io_pmem_axi_ar_araddr    (io_pmem_axi_ar_araddr),
+    .io_pmem_axi_ar_arlen     (io_pmem_axi_ar_arlen),
     .io_pmem_axi_ar_arprot    (io_pmem_axi_ar_arprot),
     .io_pmem_axi_ar_arvalid   (io_pmem_axi_ar_arvalid),
     .io_pmem_axi_ar_arready   (io_pmem_axi_ar_arready),
@@ -375,7 +376,6 @@ module SZCOREtop(
     .io_pmem_axi_b_bvalid     (io_pmem_axi_b_bvalid),
     .io_pmem_axi_b_bready     (io_pmem_axi_b_bready)
   );
-  assign io_pmem_axi_ar_arlen = 8'h3;
   assign io_pmem_axi_ar_arsize = 3'h2;
   assign io_pmem_axi_ar_arburst = 2'h1;
   assign io_pmem_axi_ar_arlock = 1'h0;

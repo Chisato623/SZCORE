@@ -1,60 +1,66 @@
 package SZCORE
 
 import chisel3._
-import chisel3.util._
 
-/** Single-issue core with split ICache/DCache and one shared AXI4 master port. */
-class SZCOREtop extends RawModule {
-  val io = IO(new Bundle {
-    val cpu_clk = Input(Clock())
-    val cpu_rst = Input(Bool())
-    val pmem_axi = new AXIMaster
-    val inst = Output(UInt(32.W))
-    val pc = Output(UInt(32.W))
-  })
+/**
+  * Architectural CPU core.
+  *
+  * Its ports deliberately match the course template: instruction and data
+  * accesses are expressed independently from the cache and AXI hierarchy.
+  */
+class CpuCore extends RawModule {
+  override def desiredName: String = "cpu_core"
 
-  withClockAndReset(io.cpu_clk, io.cpu_rst) {
+  val cpu_rst = IO(Input(Bool()))
+  val cpu_clk = IO(Input(Clock()))
+  val ifetch_req = IO(Output(Bool()))
+  val ifetch_addr = IO(Output(UInt(32.W)))
+  val ifetch_valid = IO(Input(Bool()))
+  val ifetch_inst = IO(Input(UInt(32.W)))
+  val daccess_ren = IO(Output(UInt(4.W)))
+  val daccess_addr = IO(Output(UInt(32.W)))
+  val daccess_rvalid = IO(Input(Bool()))
+  val daccess_rdata = IO(Input(UInt(32.W)))
+  val daccess_wen = IO(Output(UInt(4.W)))
+  val daccess_wdata = IO(Output(UInt(32.W)))
+  val daccess_wresp = IO(Input(Bool()))
+
+  withClockAndReset(cpu_clk, cpu_rst) {
     val ifu = Module(new IFU)
     val idu = Module(new IDU)
     val exu = Module(new EXU)
+    val mulDiv = Module(new MulDiv)
     val lsu = Module(new LSU)
     val wbu = Module(new WBU)
     val gpr = Module(new GPR)
     val csr = Module(new CSR)
-    val icache = Module(new ICache)
-    val dcache = Module(new DCache)
-    val axiMaster = Module(new AXI_Master)
 
     val ifuInst = ifu.io.out.bits.inst
     val ifuPc = ifu.io.out.bits.pc
     val ifuFire = ifu.io.out.valid && ifu.io.out.ready
-    val gprRs1Data = gpr.io.rs1data
-    val gprRs2Data = gpr.io.rs2data
-    val exuResult = exu.io.result
-    val csrReadValue = csr.io.readval
-    val jump = idu.io.dobranch || idu.io.J || idu.io.jalr || idu.io.ecall || idu.io.mret
-    val jumpTarget = Mux(idu.io.mret, csrReadValue, exuResult)
     val memOperation = idu.io.mem_load || idu.io.S
     val issueMemory = ifuFire && memOperation
+    val aluResult = Mux(idu.io.muldiv, mulDiv.io.result, exu.io.result)
+    val jump = idu.io.dobranch || idu.io.J || idu.io.jalr || idu.io.ecall || idu.io.mret
     val gprWrite = !idu.io.S && (idu.io.R || idu.io.I || idu.io.U || idu.io.J || idu.io.mem_load || idu.io.csr)
-    val normalWriteback = ifuFire && !memOperation && gprWrite
-
     val memRd = RegInit(0.U(5.W))
-    memRd := Mux(issueMemory, idu.io.rdaddr, memRd)
+    when(issueMemory) { memRd := idu.io.rdaddr }
 
-    ifu.io.out.ready := !lsu.io.busy
+    val mulDivActive = ifu.io.out.valid && idu.io.muldiv
+    val mulDivStart = mulDivActive && !mulDiv.io.busy && !mulDiv.io.done
+    ifu.io.out.ready := !lsu.io.busy && (!mulDivActive || mulDiv.io.done)
     ifu.io.jump := ifuFire && jump
-    ifu.io.jumptarget := jumpTarget
-    ifu.io.stall := lsu.io.busy
-    ifu.io.cacheRespValid := icache.io.cpuRespValid
-    ifu.io.cacheRespInst := icache.io.cpuRespInst
-    icache.io.cpuReq := ifu.io.cacheReq
-    icache.io.cpuAddr := ifu.io.cacheAddr
+    ifu.io.jumptarget := Mux(idu.io.mret, csr.io.readval, aluResult)
+    ifu.io.stall := lsu.io.busy || (mulDivActive && !mulDiv.io.done)
+    ifu.io.cacheRespValid := ifetch_valid
+    ifu.io.cacheRespInst := ifetch_inst
+    ifetch_req := ifu.io.cacheReq
+    ifetch_addr := ifu.io.cacheAddr
 
     idu.io.inst := ifuInst
     idu.io.pc := ifuPc.asUInt
-    idu.io.rs1data := gprRs1Data
-    idu.io.rs2data := gprRs2Data
+    idu.io.rs1data := gpr.io.rs1data
+    idu.io.rs2data := gpr.io.rs2data
 
     exu.io.a := idu.io.alu_a
     exu.io.b := idu.io.alu_b
@@ -69,104 +75,90 @@ class SZCOREtop extends RawModule {
     exu.io.sll := idu.io.alu_sll
     exu.io.srl := idu.io.alu_srl
     exu.io.sra := idu.io.alu_sra
-    exu.io.mul := idu.io.alu_mul
-    exu.io.mulh := idu.io.alu_mulh
-    exu.io.mulsu := idu.io.alu_mulsu
-    exu.io.mulu := idu.io.alu_mulu
-    exu.io.div := idu.io.alu_div
-    exu.io.divu := idu.io.alu_divu
-    exu.io.rem := idu.io.alu_rem
-    exu.io.remu := idu.io.alu_remu
 
-    lsu.io.exuResult := exuResult
+    mulDiv.io.start := mulDivStart
+    mulDiv.io.funct3 := idu.io.muldiv_funct3
+    mulDiv.io.a := idu.io.alu_a
+    mulDiv.io.b := idu.io.alu_b
+
+    lsu.io.exuResult := aluResult
     lsu.io.funct3 := ifuInst(14, 12)
-    lsu.io.gprRs2Data := gprRs2Data
+    lsu.io.gprRs2Data := gpr.io.rs2data
     lsu.io.load := issueMemory && idu.io.mem_load
     lsu.io.store := issueMemory && idu.io.S
-    lsu.io.cacheRespValid := dcache.io.cpuRespValid
-    lsu.io.cacheRespData := dcache.io.cpuRespData
-    dcache.io.cpuReq := lsu.io.cacheReq
-    dcache.io.cpuWrite := lsu.io.cacheWrite
-    dcache.io.cpuAddr := lsu.io.cacheAddr
-    dcache.io.cpuWData := lsu.io.cacheWData
-    dcache.io.cpuWStrb := lsu.io.cacheWStrb
+    lsu.io.cacheRespValid := daccess_rvalid || daccess_wresp
+    lsu.io.cacheRespData := daccess_rdata
+    daccess_ren := Mux(lsu.io.cacheReq && !lsu.io.cacheWrite, "b1111".U, 0.U)
+    daccess_wen := Mux(lsu.io.cacheReq && lsu.io.cacheWrite, lsu.io.cacheWStrb, 0.U)
+    daccess_addr := lsu.io.cacheAddr
+    daccess_wdata := lsu.io.cacheWData
 
-    wbu.io.exuresult := exuResult
+    wbu.io.exuresult := aluResult
     wbu.io.mem_rdata := lsu.io.loadData.asUInt
     wbu.io.pc := ifuPc
     wbu.io.mem_load := idu.io.mem_load
     wbu.io.J := idu.io.J
     wbu.io.jalr := idu.io.jalr
     wbu.io.csr := idu.io.csr
-    wbu.io.csrval := csrReadValue
+    wbu.io.csrval := csr.io.readval
 
     gpr.io.rs1addr := idu.io.rs1addr
     gpr.io.rs2addr := idu.io.rs2addr
-    gpr.io.we := normalWriteback || lsu.io.loadDone
+    gpr.io.we := (ifuFire && !memOperation && gprWrite) || lsu.io.loadDone
     gpr.io.rdaddr := Mux(lsu.io.loadDone, memRd, idu.io.rdaddr)
     gpr.io.rddata := Mux(lsu.io.loadDone, lsu.io.loadData, wbu.io.writeback_data)
 
-    csr.io.we := idu.io.csr_write && ifuFire && !memOperation
     csr.io.addr := idu.io.csraddr
-    csr.io.op_val := gprRs1Data
-    csr.io.clear := idu.io.csr_clear
-    csr.io.set := idu.io.csr_set
+    csr.io.op_val := gpr.io.rs1data
     csr.io.write := idu.io.csr_write && ifuFire && !memOperation
-    csr.io.pc := ifuPc.asUInt
+    csr.io.set := idu.io.csr_set
+    csr.io.clear := idu.io.csr_clear
     csr.io.ecall := idu.io.ecall && ifuFire && !memOperation
     csr.io.mret := idu.io.mret && ifuFire && !memOperation
+    csr.io.pc := ifuPc.asUInt
+    csr.io.we := idu.io.csr_write && ifuFire && !memOperation
+  }
+}
+
+/** Cache and AXI hierarchy surrounding the template-compatible CPU core. */
+class CpuTop extends RawModule {
+  override def desiredName: String = "cpu_top"
+
+  val io = IO(new Bundle {
+    val cpu_clk = Input(Clock())
+    val cpu_rst = Input(Bool())
+    val pmem_axi = new AXIMaster(AXIConfig())
+    val inst = Output(UInt(32.W))
+    val pc = Output(UInt(32.W))
+  })
+
+  withClockAndReset(io.cpu_clk, io.cpu_rst) {
+    val U_core = Module(new CpuCore)
+    val icache = Module(new ICache)
+    val dcache = Module(new DCache)
+    val axiMaster = Module(new AXI_Master)
+
+    U_core.cpu_clk := io.cpu_clk
+    U_core.cpu_rst := io.cpu_rst
+    U_core.ifetch_valid := icache.io.cpuRespValid
+    U_core.ifetch_inst := icache.io.cpuRespInst
+    icache.io.cpuReq := U_core.ifetch_req
+    icache.io.cpuAddr := U_core.ifetch_addr
+
+    val daccessReq = U_core.daccess_ren.orR || U_core.daccess_wen.orR
+    dcache.io.cpuReq := daccessReq
+    dcache.io.cpuWrite := U_core.daccess_wen.orR
+    dcache.io.cpuAddr := U_core.daccess_addr
+    dcache.io.cpuWData := U_core.daccess_wdata
+    dcache.io.cpuWStrb := U_core.daccess_wen
+    U_core.daccess_rvalid := dcache.io.cpuRespValid
+    U_core.daccess_rdata := dcache.io.cpuRespData
+    U_core.daccess_wresp := dcache.io.cpuRespValid
 
     axiMaster.io.icache_axi <> icache.io.axi
     axiMaster.io.lsu_axi <> dcache.io.axi
-    connectAxiMaster(io.pmem_axi, axiMaster.io.pmem_axi)
-
-    io.inst := ifuInst
-    io.pc := ifuPc.asUInt
-  }
-
-  private def connectAxiMaster(external: AXIMaster, internal: AXIMaster): Unit = {
-    external.ar.arid := internal.ar.arid
-    external.ar.araddr := internal.ar.araddr
-    external.ar.arlen := internal.ar.arlen
-    external.ar.arsize := internal.ar.arsize
-    external.ar.arburst := internal.ar.arburst
-    external.ar.arlock := internal.ar.arlock
-    external.ar.arcache := internal.ar.arcache
-    external.ar.arprot := internal.ar.arprot
-    external.ar.arqos := internal.ar.arqos
-    external.ar.arregion := internal.ar.arregion
-    external.ar.arvalid := internal.ar.arvalid
-    internal.ar.arready := external.ar.arready
-
-    internal.r.rid := external.r.rid
-    internal.r.rdata := external.r.rdata
-    internal.r.rresp := external.r.rresp
-    internal.r.rlast := external.r.rlast
-    internal.r.rvalid := external.r.rvalid
-    external.r.rready := internal.r.rready
-
-    external.aw.awid := internal.aw.awid
-    external.aw.awaddr := internal.aw.awaddr
-    external.aw.awlen := internal.aw.awlen
-    external.aw.awsize := internal.aw.awsize
-    external.aw.awburst := internal.aw.awburst
-    external.aw.awlock := internal.aw.awlock
-    external.aw.awcache := internal.aw.awcache
-    external.aw.awprot := internal.aw.awprot
-    external.aw.awqos := internal.aw.awqos
-    external.aw.awregion := internal.aw.awregion
-    external.aw.awvalid := internal.aw.awvalid
-    internal.aw.awready := external.aw.awready
-
-    external.w.wdata := internal.w.wdata
-    external.w.wstrb := internal.w.wstrb
-    external.w.wlast := internal.w.wlast
-    external.w.wvalid := internal.w.wvalid
-    internal.w.wready := external.w.wready
-
-    internal.b.bid := external.b.bid
-    internal.b.bresp := external.b.bresp
-    internal.b.bvalid := external.b.bvalid
-    external.b.bready := internal.b.bready
+    axiMaster.io.pmem_axi <> io.pmem_axi
+    io.inst := 0.U
+    io.pc := 0.U
   }
 }

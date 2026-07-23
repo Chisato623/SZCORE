@@ -1,11 +1,13 @@
 IFU.sv
 IDU.sv
 EXU.sv
+MulDiv.sv
 LSU.sv
 WBU.sv
 GPR.sv
 CSR.sv
+cpu_core.sv
 ICache.sv
 DCache.sv
 AXI_Master.sv
-SZCOREtop.sv
+cpu_top.sv

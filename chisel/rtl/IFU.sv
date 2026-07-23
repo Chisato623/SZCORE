@@ -29,10 +29,10 @@ module IFU(
   always @(posedge clock) begin
     if (reset) begin
       state <= 2'h0;
-      pcReg <= 32'h80000000;
-      requestPc <= 32'h80000000;
+      pcReg <= 32'h0;
+      requestPc <= 32'h0;
       outInst <= 32'h0;
-      outPc <= 32'h80000000;
+      outPc <= 32'h0;
     end
     else begin
       automatic logic receive;

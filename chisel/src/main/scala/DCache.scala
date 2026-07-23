@@ -59,6 +59,8 @@ class DCache(
   val requestTag = requestAddr(axiConfig.addrWidth - 1, lineOffsetBits + indexBits)
   val requestWordOffset = requestAddr(lineOffsetBits - 1, byteOffsetBits)
   val lineBase = Cat(requestAddr(axiConfig.addrWidth - 1, lineOffsetBits), 0.U(lineOffsetBits.W))
+  // Device registers must never be cached or fetched as cache-line bursts.
+  val isMMIO = requestAddr(31, 16) === "hFFFF".U
 
   val cacheLine = dataArray(requestIndex)
   val cacheWord = MuxLookup(requestWordOffset, 0.U(axiConfig.dataWidth.W))(Seq(
@@ -83,7 +85,7 @@ class DCache(
     Fill(8, requestWStrb(0))
   )
   val mergedStoreWord = (cacheWord & ~byteMask) | (alignedStoreData & byteMask)
-  val storeHit = state === sLookup && requestWrite && hit
+  val storeHit = state === sLookup && requestWrite && hit && !isMMIO
   val storeLine = MuxLookup(requestWordOffset, cacheLine)(Seq(
     0.U -> Cat(cacheLine(127, 32), mergedStoreWord),
     1.U -> Cat(cacheLine(127, 64), mergedStoreWord, cacheLine(31, 0)),
@@ -98,12 +100,12 @@ class DCache(
   val bHandshake = io.axi.b.bvalid && io.axi.b.bready
   val fillEnable = state === sReadData && rHandshake
   val fillLast = fillEnable && io.axi.r.rlast
-  val fillTargetWord = fillEnable && fillWordOffset === requestWordOffset
-  val missStart = state === sLookup && !requestWrite && !hit
+  val fillTargetWord = fillEnable && (isMMIO || fillWordOffset === requestWordOffset)
+  val missStart = state === sLookup && !requestWrite && (!hit || isMMIO)
 
   nextState := MuxLookup(state, sIdle)(Seq(
     sIdle -> Mux(io.cpuReq, sLookup, sIdle),
-    sLookup -> Mux(requestWrite, sWriteAddress, Mux(hit, sRespond, sReadAddress)),
+    sLookup -> Mux(requestWrite, sWriteAddress, Mux(hit && !isMMIO, sRespond, sReadAddress)),
     sReadAddress -> Mux(arHandshake, sReadData, sReadAddress),
     sReadData -> Mux(fillLast, sRespond, sReadData),
     sWriteAddress -> Mux(awHandshake, sWriteData, sWriteAddress),
@@ -135,19 +137,19 @@ class DCache(
     3.U -> Cat(io.axi.r.rdata, cacheLine(95, 0))
   ))
   dataArray(requestIndex) := Mux(
-    fillEnable,
+    fillEnable && !isMMIO,
     filledLine,
     Mux(storeHit, storeLine, cacheLine)
   )
-  tagArray(requestIndex) := Mux(fillLast, requestTag, tagArray(requestIndex))
-  validArray(requestIndex) := Mux(fillLast, true.B, validArray(requestIndex))
+  tagArray(requestIndex) := Mux(fillLast && !isMMIO, requestTag, tagArray(requestIndex))
+  validArray(requestIndex) := Mux(fillLast && !isMMIO, true.B, validArray(requestIndex))
 
   io.cpuRespValid := state === sRespond
   io.cpuRespData := responseData
 
   io.axi.ar.arid := 1.U
-  io.axi.ar.araddr := lineBase
-  io.axi.ar.arlen := (wordsPerLine - 1).U(8.W)
+  io.axi.ar.araddr := Mux(isMMIO, requestAddr, lineBase)
+  io.axi.ar.arlen := Mux(isMMIO, 0.U(8.W), (wordsPerLine - 1).U(8.W))
   io.axi.ar.arsize := byteOffsetBits.U(3.W)
   io.axi.ar.arburst := AXI.BurstIncr
   io.axi.ar.arlock := false.B

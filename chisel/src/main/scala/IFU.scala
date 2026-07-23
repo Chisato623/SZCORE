@@ -23,10 +23,10 @@ class IFU extends Module {
 
   val sIdle :: sWaitCache :: sOutput :: Nil = Enum(3)
   val state = RegInit(sIdle)
-  val pcReg = RegInit(0x80000000.S(32.W))
-  val requestPc = RegInit(0x80000000.S(32.W))
+  val pcReg = RegInit(0.S(32.W))
+  val requestPc = RegInit(0.S(32.W))
   val outInst = RegInit(0.U(32.W))
-  val outPc = RegInit(0x80000000.S(32.W))
+  val outPc = RegInit(0.S(32.W))
 
   val issue = state === sIdle && !io.stall
   val receive = state === sWaitCache && io.cacheRespValid

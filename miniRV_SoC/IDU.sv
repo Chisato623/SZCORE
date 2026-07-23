@@ -31,14 +31,8 @@ module IDU(
                 io_alu_sll,
                 io_alu_srl,
                 io_alu_sra,
-                io_alu_mul,
-                io_alu_mulh,
-                io_alu_mulsu,
-                io_alu_mulu,
-                io_alu_div,
-                io_alu_divu,
-                io_alu_rem,
-                io_alu_remu,
+                io_muldiv,
+  output [2:0]  io_muldiv_funct3,
   output [31:0] io_alu_a,
                 io_alu_b,
   output        io_mem_load,
@@ -106,14 +100,12 @@ module IDU(
   assign io_alu_sll = _io_alu_b_T_1 & (isOpImm | isRop & _isSrl_T);
   assign io_alu_srl = _isSrl_T & _io_alu_b_T & _isSra_T_3;
   assign io_alu_sra = _isSra_T & _io_alu_b_T & _isSra_T_3;
-  assign io_alu_mul = _isRemu_T & ~(|(io_inst[14:12])) & isRop;
-  assign io_alu_mulh = _isRemu_T & _io_alu_b_T_1 & isRop;
-  assign io_alu_mulsu = _isRemu_T & _isMulsu_T_1 & isRop;
-  assign io_alu_mulu = _isRemu_T & _isMulu_T_1 & isRop;
-  assign io_alu_div = _isRemu_T & _isDiv_T_1 & isRop;
-  assign io_alu_divu = _isRemu_T & _io_alu_b_T & isRop;
-  assign io_alu_rem = _isRemu_T & _isRem_T_1 & isRop;
-  assign io_alu_remu = _isRemu_T & (&(io_inst[14:12])) & isRop;
+  assign io_muldiv =
+    _isRemu_T & ~(|(io_inst[14:12])) & isRop | _isRemu_T & _io_alu_b_T_1 & isRop
+    | _isRemu_T & _isMulsu_T_1 & isRop | _isRemu_T & _isMulu_T_1 & isRop | _isRemu_T
+    & _isDiv_T_1 & isRop | _isRemu_T & _io_alu_b_T & isRop | _isRemu_T & _isRem_T_1
+    & isRop | _isRemu_T & (&(io_inst[14:12])) & isRop;
+  assign io_muldiv_funct3 = io_inst[14:12];
   assign io_alu_a = isAuipc | isJal | isBranch ? io_pc : io_rs1data;
   assign io_alu_b =
     isRop | isRop & (_io_alu_b_T | _io_alu_b_T_1)
