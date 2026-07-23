@@ -2,7 +2,7 @@
 -- Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
 -- --------------------------------------------------------------------------------
 -- Tool Version: Vivado v.2023.1 (win64) Build 3865809 Sun May  7 15:05:29 MDT 2023
--- Date        : Thu Jul 16 11:53:36 2026
+-- Date        : Thu Jul 23 22:53:52 2026
 -- Host        : Ypa running 64-bit major release  (build 9200)
 -- Command     : write_vhdl -force -mode funcsim
 --               e:/SZCORE_ADAPTED/miniRV.gen/sources_1/ip/clk_wiz_0/clk_wiz_0_sim_netlist.vhdl
@@ -68,11 +68,11 @@ clkout1_buf: unisim.vcomponents.BUFG
 plle2_adv_inst: unisim.vcomponents.PLLE2_ADV
     generic map(
       BANDWIDTH => "OPTIMIZED",
-      CLKFBOUT_MULT => 17,
+      CLKFBOUT_MULT => 9,
       CLKFBOUT_PHASE => 0.000000,
       CLKIN1_PERIOD => 10.000000,
       CLKIN2_PERIOD => 0.000000,
-      CLKOUT0_DIVIDE => 17,
+      CLKOUT0_DIVIDE => 10,
       CLKOUT0_DUTY_CYCLE => 0.500000,
       CLKOUT0_PHASE => 0.000000,
       CLKOUT1_DIVIDE => 1,
@@ -91,7 +91,7 @@ plle2_adv_inst: unisim.vcomponents.PLLE2_ADV
       CLKOUT5_DUTY_CYCLE => 0.500000,
       CLKOUT5_PHASE => 0.000000,
       COMPENSATION => "ZHOLD",
-      DIVCLK_DIVIDE => 2,
+      DIVCLK_DIVIDE => 1,
       IS_CLKINSEL_INVERTED => '0',
       IS_PWRDWN_INVERTED => '0',
       IS_RST_INVERTED => '0',
