@@ -2,10 +2,10 @@
 -- Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
 -- --------------------------------------------------------------------------------
 -- Tool Version: Vivado v.2023.1 (win64) Build 3865809 Sun May  7 15:05:29 MDT 2023
--- Date        : Thu Jul 23 22:53:54 2026
+-- Date        : Thu Jul 23 22:28:56 2026
 -- Host        : Ypa running 64-bit major release  (build 9200)
--- Command     : write_vhdl -force -mode funcsim
---               e:/SZCORE_ADAPTED/chisel/rtl/ip/axi_uartlite_0/axi_uartlite_0_sim_netlist.vhdl
+-- Command     : write_vhdl -force -mode funcsim -rename_top axi_uartlite_0 -prefix
+--               axi_uartlite_0_ axi_uartlite_0_sim_netlist.vhdl
 -- Design      : axi_uartlite_0
 -- Purpose     : This VHDL netlist is a functional simulation representation of the design and should not be modified or
 --               synthesized. This netlist cannot be used for SDF annotated simulation.
@@ -21,8 +21,6 @@ entity axi_uartlite_0_baudrate is
     EN_16x_Baud_reg_0 : in STD_LOGIC;
     s_axi_aclk : in STD_LOGIC
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_baudrate : entity is "baudrate";
 end axi_uartlite_0_baudrate;
 
 architecture STRUCTURE of axi_uartlite_0_baudrate is
@@ -34,6 +32,9 @@ architecture STRUCTURE of axi_uartlite_0_baudrate is
   signal \count[4]_i_1_n_0\ : STD_LOGIC;
   signal \count[5]_i_1_n_0\ : STD_LOGIC;
   signal p_0_in : STD_LOGIC;
+  attribute SOFT_HLUTNM : string;
+  attribute SOFT_HLUTNM of \count[2]_i_1\ : label is "soft_lutpair10";
+  attribute SOFT_HLUTNM of \count[3]_i_1\ : label is "soft_lutpair10";
 begin
 en_16x_baud_RnM: unisim.vcomponents.LUT6
     generic map(
@@ -56,17 +57,12 @@ EN_16x_Baud_reg: unisim.vcomponents.FDRE
       Q => en_16x_Baud,
       R => EN_16x_Baud_reg_0
     );
-\count[0]_i_1\: unisim.vcomponents.LUT6
+\count[0]_i_1\: unisim.vcomponents.LUT1
     generic map(
-      INIT => X"00000000FFFFFFFE"
+      INIT => X"1"
     )
         port map (
-      I0 => count(2),
-      I1 => count(3),
-      I2 => count(1),
-      I3 => count(4),
-      I4 => count(5),
-      I5 => count(0),
+      I0 => count(0),
       O => \count[0]_i_1_n_0\
     );
 \count[1]_i_1\: unisim.vcomponents.LUT6
@@ -82,42 +78,38 @@ EN_16x_Baud_reg: unisim.vcomponents.FDRE
       I5 => count(0),
       O => \count[1]_i_1_n_0\
     );
-\count[2]_i_1\: unisim.vcomponents.LUT6
+\count[2]_i_1\: unisim.vcomponents.LUT3
     generic map(
-      INIT => X"FF00FF00FF0000FE"
+      INIT => X"A9"
     )
         port map (
-      I0 => count(3),
-      I1 => count(4),
-      I2 => count(5),
-      I3 => count(2),
-      I4 => count(0),
-      I5 => count(1),
+      I0 => count(2),
+      I1 => count(1),
+      I2 => count(0),
       O => \count[2]_i_1_n_0\
     );
-\count[3]_i_1\: unisim.vcomponents.LUT6
+\count[3]_i_1\: unisim.vcomponents.LUT4
     generic map(
-      INIT => X"F0F0F0F0F0F0F00E"
-    )
-        port map (
-      I0 => count(4),
-      I1 => count(5),
-      I2 => count(3),
-      I3 => count(2),
-      I4 => count(1),
-      I5 => count(0),
-      O => \count[3]_i_1_n_0\
-    );
-\count[4]_i_1\: unisim.vcomponents.LUT5
-    generic map(
-      INIT => X"FFFE0001"
+      INIT => X"CCC9"
     )
         port map (
       I0 => count(2),
       I1 => count(3),
       I2 => count(1),
       I3 => count(0),
-      I4 => count(4),
+      O => \count[3]_i_1_n_0\
+    );
+\count[4]_i_1\: unisim.vcomponents.LUT6
+    generic map(
+      INIT => X"CCCCCCCCCCCCCCC2"
+    )
+        port map (
+      I0 => count(5),
+      I1 => count(4),
+      I2 => count(0),
+      I3 => count(1),
+      I4 => count(2),
+      I5 => count(3),
       O => \count[4]_i_1_n_0\
     );
 \count[5]_i_1\: unisim.vcomponents.LUT6
@@ -223,8 +215,6 @@ entity axi_uartlite_0_cdc_sync is
     rx : in STD_LOGIC;
     s_axi_aclk : in STD_LOGIC
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_cdc_sync : entity is "cdc_sync";
 end axi_uartlite_0_cdc_sync;
 
 architecture STRUCTURE of axi_uartlite_0_cdc_sync is
@@ -254,8 +244,8 @@ architecture STRUCTURE of axi_uartlite_0_cdc_sync is
   attribute XILINX_TRANSFORM_PINMAP of \GENERATE_LEVEL_P_S_CDC.SINGLE_BIT.CROSS_PLEVEL_IN2SCNDRY_s_level_out_d4\ : label is "VCC:CE";
   attribute box_type of \GENERATE_LEVEL_P_S_CDC.SINGLE_BIT.CROSS_PLEVEL_IN2SCNDRY_s_level_out_d4\ : label is "PRIMITIVE";
   attribute SOFT_HLUTNM : string;
-  attribute SOFT_HLUTNM of frame_err_ocrd_i_1 : label is "soft_lutpair10";
-  attribute SOFT_HLUTNM of \status_reg[1]_i_2\ : label is "soft_lutpair10";
+  attribute SOFT_HLUTNM of frame_err_ocrd_i_1 : label is "soft_lutpair11";
+  attribute SOFT_HLUTNM of \status_reg[1]_i_2\ : label is "soft_lutpair11";
 begin
   scndry_out <= \^scndry_out\;
 \GENERATE_LEVEL_P_S_CDC.SINGLE_BIT.CROSS_PLEVEL_IN2SCNDRY_IN_cdc_to\: unisim.vcomponents.FDRE
@@ -388,8 +378,6 @@ entity axi_uartlite_0_cntr_incr_decr_addn_f is
     s_axi_aresetn : in STD_LOGIC;
     s_axi_aclk : in STD_LOGIC
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_cntr_incr_decr_addn_f : entity is "cntr_incr_decr_addn_f";
 end axi_uartlite_0_cntr_incr_decr_addn_f;
 
 architecture STRUCTURE of axi_uartlite_0_cntr_incr_decr_addn_f is
@@ -401,8 +389,8 @@ architecture STRUCTURE of axi_uartlite_0_cntr_incr_decr_addn_f is
   signal \^ss\ : STD_LOGIC_VECTOR ( 0 to 0 );
   signal addr_i_p1 : STD_LOGIC_VECTOR ( 4 downto 0 );
   attribute SOFT_HLUTNM : string;
-  attribute SOFT_HLUTNM of \INFERRED_GEN.cnt_i[3]_i_2__0\ : label is "soft_lutpair15";
-  attribute SOFT_HLUTNM of tx_Start_i_1 : label is "soft_lutpair15";
+  attribute SOFT_HLUTNM of \INFERRED_GEN.cnt_i[3]_i_2__0\ : label is "soft_lutpair16";
+  attribute SOFT_HLUTNM of tx_Start_i_1 : label is "soft_lutpair16";
 begin
   Q(4 downto 0) <= \^q\(4 downto 0);
   SS(0) <= \^ss\(0);
@@ -805,8 +793,6 @@ entity axi_uartlite_0_dynshreg_f is
     Q : in STD_LOGIC_VECTOR ( 3 downto 0 );
     s_axi_aclk : in STD_LOGIC
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_dynshreg_f : entity is "dynshreg_f";
 end axi_uartlite_0_dynshreg_f;
 
 architecture STRUCTURE of axi_uartlite_0_dynshreg_f is
@@ -1152,8 +1138,6 @@ entity axi_uartlite_0_pselect_f is
     \GEN_BKEND_CE_REGISTERS[0].ce_out_i_reg[0]\ : in STD_LOGIC;
     \GEN_BKEND_CE_REGISTERS[0].ce_out_i_reg[0]_0\ : in STD_LOGIC
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_pselect_f : entity is "pselect_f";
 end axi_uartlite_0_pselect_f;
 
 architecture STRUCTURE of axi_uartlite_0_pselect_f is
@@ -1244,8 +1228,6 @@ entity axi_uartlite_0_address_decoder is
     \GEN_BKEND_CE_REGISTERS[2].ce_out_i_reg[2]_2\ : in STD_LOGIC;
     \GEN_BKEND_CE_REGISTERS[2].ce_out_i_reg[2]_3\ : in STD_LOGIC
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_address_decoder : entity is "address_decoder";
 end axi_uartlite_0_address_decoder;
 
 architecture STRUCTURE of axi_uartlite_0_address_decoder is
@@ -1700,8 +1682,6 @@ entity axi_uartlite_0_srl_fifo_rbu_f is
     s_axi_aresetn : in STD_LOGIC;
     s_axi_wdata : in STD_LOGIC_VECTOR ( 7 downto 0 )
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_srl_fifo_rbu_f : entity is "srl_fifo_rbu_f";
 end axi_uartlite_0_srl_fifo_rbu_f;
 
 architecture STRUCTURE of axi_uartlite_0_srl_fifo_rbu_f is
@@ -1899,8 +1879,6 @@ entity axi_uartlite_0_slave_attachment is
     s_axi_araddr : in STD_LOGIC_VECTOR ( 1 downto 0 );
     s_axi_awaddr : in STD_LOGIC_VECTOR ( 1 downto 0 )
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_slave_attachment : entity is "slave_attachment";
 end axi_uartlite_0_slave_attachment;
 
 architecture STRUCTURE of axi_uartlite_0_slave_attachment is
@@ -2347,8 +2325,6 @@ entity axi_uartlite_0_srl_fifo_f is
     s_axi_aresetn : in STD_LOGIC;
     s_axi_wdata : in STD_LOGIC_VECTOR ( 7 downto 0 )
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_srl_fifo_f : entity is "srl_fifo_f";
 end axi_uartlite_0_srl_fifo_f;
 
 architecture STRUCTURE of axi_uartlite_0_srl_fifo_f is
@@ -2470,8 +2446,6 @@ entity axi_uartlite_0_axi_lite_ipif is
     s_axi_araddr : in STD_LOGIC_VECTOR ( 1 downto 0 );
     s_axi_awaddr : in STD_LOGIC_VECTOR ( 1 downto 0 )
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_axi_lite_ipif : entity is "axi_lite_ipif";
 end axi_uartlite_0_axi_lite_ipif;
 
 architecture STRUCTURE of axi_uartlite_0_axi_lite_ipif is
@@ -2540,8 +2514,6 @@ entity axi_uartlite_0_uartlite_rx is
     \INFERRED_GEN.cnt_i_reg[0]\ : in STD_LOGIC;
     rx : in STD_LOGIC
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_uartlite_rx : entity is "uartlite_rx";
 end axi_uartlite_0_uartlite_rx;
 
 architecture STRUCTURE of axi_uartlite_0_uartlite_rx is
@@ -2594,18 +2566,18 @@ architecture STRUCTURE of axi_uartlite_0_uartlite_rx is
   signal valid_rx : STD_LOGIC;
   signal valid_rx_i_1_n_0 : STD_LOGIC;
   attribute SOFT_HLUTNM : string;
-  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[2].fifo_din[2]_i_1\ : label is "soft_lutpair12";
-  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[3].fifo_din[3]_i_1\ : label is "soft_lutpair12";
-  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[4].fifo_din[4]_i_1\ : label is "soft_lutpair13";
-  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[5].fifo_din[5]_i_1\ : label is "soft_lutpair13";
-  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[6].fifo_din[6]_i_1\ : label is "soft_lutpair14";
-  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[7].fifo_din[7]_i_1\ : label is "soft_lutpair14";
+  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[2].fifo_din[2]_i_1\ : label is "soft_lutpair13";
+  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[3].fifo_din[3]_i_1\ : label is "soft_lutpair13";
+  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[4].fifo_din[4]_i_1\ : label is "soft_lutpair14";
+  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[5].fifo_din[5]_i_1\ : label is "soft_lutpair14";
+  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[6].fifo_din[6]_i_1\ : label is "soft_lutpair15";
+  attribute SOFT_HLUTNM of \SERIAL_TO_PARALLEL[7].fifo_din[7]_i_1\ : label is "soft_lutpair15";
   attribute srl_bus_name : string;
   attribute srl_bus_name of \data_shift_reg[13]_srl14___UARTLITE_CORE_I_UARTLITE_RX_I_data_shift_reg_r_12\ : label is "U0/\UARTLITE_CORE_I/UARTLITE_RX_I/data_shift_reg ";
   attribute srl_name : string;
   attribute srl_name of \data_shift_reg[13]_srl14___UARTLITE_CORE_I_UARTLITE_RX_I_data_shift_reg_r_12\ : label is "U0/\UARTLITE_CORE_I/UARTLITE_RX_I/data_shift_reg[13]_srl14___UARTLITE_CORE_I_UARTLITE_RX_I_data_shift_reg_r_12 ";
-  attribute SOFT_HLUTNM of \data_shift_reg[13]_srl14___UARTLITE_CORE_I_UARTLITE_RX_I_data_shift_reg_r_12_i_1\ : label is "soft_lutpair11";
-  attribute SOFT_HLUTNM of valid_rx_i_1 : label is "soft_lutpair11";
+  attribute SOFT_HLUTNM of \data_shift_reg[13]_srl14___UARTLITE_CORE_I_UARTLITE_RX_I_data_shift_reg_r_12_i_1\ : label is "soft_lutpair12";
+  attribute SOFT_HLUTNM of valid_rx_i_1 : label is "soft_lutpair12";
 begin
   data_shift_reg_r_12_0 <= \^data_shift_reg_r_12_0\;
   s_axi_aresetn_0 <= \^s_axi_aresetn_0\;
@@ -3176,8 +3148,6 @@ entity axi_uartlite_0_uartlite_tx is
     s_axi_aresetn : in STD_LOGIC;
     s_axi_wdata : in STD_LOGIC_VECTOR ( 7 downto 0 )
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_uartlite_tx : entity is "uartlite_tx";
 end axi_uartlite_0_uartlite_tx;
 
 architecture STRUCTURE of axi_uartlite_0_uartlite_tx is
@@ -3208,8 +3178,8 @@ architecture STRUCTURE of axi_uartlite_0_uartlite_tx is
   attribute srl_name : string;
   attribute srl_name of \data_shift_reg[13]_srl13___UARTLITE_CORE_I_UARTLITE_RX_I_data_shift_reg_r_11\ : label is "U0/\UARTLITE_CORE_I/UARTLITE_TX_I/data_shift_reg[13]_srl13___UARTLITE_CORE_I_UARTLITE_RX_I_data_shift_reg_r_11 ";
   attribute SOFT_HLUTNM : string;
-  attribute SOFT_HLUTNM of \mux_sel[0]_i_1\ : label is "soft_lutpair16";
-  attribute SOFT_HLUTNM of \mux_sel[1]_i_1\ : label is "soft_lutpair16";
+  attribute SOFT_HLUTNM of \mux_sel[0]_i_1\ : label is "soft_lutpair17";
+  attribute SOFT_HLUTNM of \mux_sel[1]_i_1\ : label is "soft_lutpair17";
 begin
 SRL_FIFO_I: entity work.axi_uartlite_0_srl_fifo_f
      port map (
@@ -3464,8 +3434,6 @@ entity axi_uartlite_0_uartlite_core is
     rx : in STD_LOGIC;
     s_axi_wdata : in STD_LOGIC_VECTOR ( 7 downto 0 )
   );
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_uartlite_core : entity is "uartlite_core";
 end axi_uartlite_0_uartlite_core;
 
 architecture STRUCTURE of axi_uartlite_0_uartlite_core is
@@ -3652,15 +3620,13 @@ entity axi_uartlite_0_axi_uartlite is
   attribute C_ODD_PARITY : integer;
   attribute C_ODD_PARITY of axi_uartlite_0_axi_uartlite : entity is 0;
   attribute C_S_AXI_ACLK_FREQ_HZ : integer;
-  attribute C_S_AXI_ACLK_FREQ_HZ of axi_uartlite_0_axi_uartlite : entity is 90000000;
+  attribute C_S_AXI_ACLK_FREQ_HZ of axi_uartlite_0_axi_uartlite : entity is 85000000;
   attribute C_S_AXI_ADDR_WIDTH : integer;
   attribute C_S_AXI_ADDR_WIDTH of axi_uartlite_0_axi_uartlite : entity is 4;
   attribute C_S_AXI_DATA_WIDTH : integer;
   attribute C_S_AXI_DATA_WIDTH of axi_uartlite_0_axi_uartlite : entity is 32;
   attribute C_USE_PARITY : integer;
   attribute C_USE_PARITY of axi_uartlite_0_axi_uartlite : entity is 0;
-  attribute ORIG_REF_NAME : string;
-  attribute ORIG_REF_NAME of axi_uartlite_0_axi_uartlite : entity is "axi_uartlite";
   attribute downgradeipidentifiedwarnings : string;
   attribute downgradeipidentifiedwarnings of axi_uartlite_0_axi_uartlite : entity is "yes";
 end axi_uartlite_0_axi_uartlite;
@@ -3867,7 +3833,7 @@ architecture STRUCTURE of axi_uartlite_0 is
   attribute C_ODD_PARITY : integer;
   attribute C_ODD_PARITY of U0 : label is 0;
   attribute C_S_AXI_ACLK_FREQ_HZ : integer;
-  attribute C_S_AXI_ACLK_FREQ_HZ of U0 : label is 90000000;
+  attribute C_S_AXI_ACLK_FREQ_HZ of U0 : label is 85000000;
   attribute C_S_AXI_ADDR_WIDTH : integer;
   attribute C_S_AXI_ADDR_WIDTH of U0 : label is 4;
   attribute C_S_AXI_DATA_WIDTH : integer;

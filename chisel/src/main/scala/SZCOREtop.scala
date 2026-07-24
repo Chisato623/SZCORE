@@ -33,10 +33,8 @@ class CpuCore extends RawModule {
     val lsu = Module(new LSU)
     val gpr = Module(new GPR)
     val csr = Module(new CSR)
+    val ifu = Module(new IFU)
 
-    // Five independently declared pipeline registers: fetch, IF/ID, ID/EX,
-    // EX/MEM and MEM/WB.  A valid bit turns an entry into a harmless bubble.
-    val fetch = RegInit(0.U.asTypeOf(new FetchReg))
     val ifId = RegInit(0.U.asTypeOf(new IFIDReg))
     val idEx = RegInit(0.U.asTypeOf(new IDEXReg))
     val exMem = RegInit(0.U.asTypeOf(new EXMEMReg))
@@ -156,10 +154,16 @@ class CpuCore extends RawModule {
     val decodeAdvance = ifId.valid && !memoryStall && !executeStall && !loadUseStall &&
       !csrStall && !systemInFlight && !redirect
 
-    val fetchAllowed = !fetch.pending && !fetch.responseValid && !ifId.valid && !memoryStall && !executeStall &&
-      !systemInFlight && !redirect
-    ifetch_req := fetchAllowed
-    ifetch_addr := fetch.pc
+    val fifoPop = ifu.io.out.valid && !memoryStall && !executeStall && !systemInFlight && !redirect &&
+      !loadUseStall && !csrStall && (!ifId.valid || decodeAdvance)
+    ifu.io.out.ready := fifoPop
+    ifu.io.cacheRespValid := ifetch_valid
+    ifu.io.cacheRespInst := ifetch_inst
+    ifu.io.jump := redirect
+    ifu.io.jumptarget := redirectTarget
+    ifu.io.stall := memoryStall || executeStall || systemInFlight
+    ifetch_req := ifu.io.cacheReq
+    ifetch_addr := ifu.io.cacheAddr
 
     when(memoryStall || executeStall) {
       // Hold every pipeline register that can feed the blocked stage.
@@ -238,34 +242,15 @@ class CpuCore extends RawModule {
         ifId.valid := false.B
       }.elsewhen(loadUseStall || csrStall) {
         ifId := ifId
-      }.elsewhen(fetch.responseValid) {
+      }.elsewhen(fifoPop) {
         ifId.valid := true.B
-        ifId.pc := fetch.responsePc
-        ifId.inst := fetch.responseInst
+        ifId.pc := ifu.io.out.bits.pc
+        ifId.inst := ifu.io.out.bits.inst
       }.elsewhen(decodeAdvance) {
         ifId.valid := false.B
       }
     }
 
-    // A redirect cannot cancel an ICache request, so its response is discarded.
-    when(redirect) {
-      fetch.pc := redirectTarget
-      fetch.responseValid := false.B
-      when(fetch.pending) { fetch.dropResponse := true.B }
-    }.elsewhen(ifetch_valid && fetch.pending) {
-      fetch.pending := false.B
-      when(!fetch.dropResponse) {
-        fetch.responseValid := true.B
-        fetch.responsePc := fetch.pc - 4.U
-        fetch.responseInst := ifetch_inst
-      }
-      fetch.dropResponse := false.B
-    }.elsewhen(fetch.responseValid && !memoryStall && !executeStall && !systemInFlight && !ifId.valid) {
-      fetch.responseValid := false.B
-    }.elsewhen(fetchAllowed) {
-      fetch.pending := true.B
-      fetch.pc := fetch.pc + 4.U
-    }
   }
 }
 

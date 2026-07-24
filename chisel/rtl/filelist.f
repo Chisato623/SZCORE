@@ -4,6 +4,7 @@ MulDiv.sv
 LSU.sv
 GPR.sv
 CSR.sv
+IFU.sv
 cpu_core.sv
 ICache.sv
 DCache.sv

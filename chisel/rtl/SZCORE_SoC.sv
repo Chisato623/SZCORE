@@ -33,10 +33,6 @@ module SZCORESOC4(
     // the clock wizard's BUFG; use lock only to hold the design in reset.
     wire sys_clk = pll_clk1;
     reg [1:0] sys_rst_sync;
-
-    // The reset presented to all AXI peripherals (including BRAM) is fully
-    // synchronous to the PLL clock.  It is released after two clock edges
-    // once the external reset is inactive and the PLL is locked.
     always @(posedge pll_clk1) begin
         if (fpga_rst || !pll_lock)
             sys_rst_sync <= 2'b11;

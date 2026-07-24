@@ -19,52 +19,98 @@ module IFU(
   input         io_stall
 );
 
-  reg  [1:0]  state;
-  reg  [31:0] pcReg;
-  reg  [31:0] requestPc;
-  reg  [31:0] outInst;
-  reg  [31:0] outPc;
-  wire        issue = ~(|state) & ~io_stall;
-  wire        io_out_valid_0 = state == 2'h2;
+  reg  [31:0]      fetchPc;
+  reg  [31:0]      responsePc;
+  reg              inFlight;
+  reg              draining;
+  reg  [31:0]      fifoPc_0;
+  reg  [31:0]      fifoPc_1;
+  reg  [31:0]      fifoPc_2;
+  reg  [31:0]      fifoPc_3;
+  reg  [31:0]      fifoInst_0;
+  reg  [31:0]      fifoInst_1;
+  reg  [31:0]      fifoInst_2;
+  reg  [31:0]      fifoInst_3;
+  reg  [1:0]       head;
+  reg  [1:0]       tail;
+  reg  [2:0]       count;
+  wire             responseFire = io_cacheRespValid & inFlight;
+  wire             requestFire =
+    (~inFlight | responseFire) & ~io_stall & ~io_jump & ~draining & ~(count[2]);
+  wire [3:0][31:0] _GEN = {{fifoPc_3}, {fifoPc_2}, {fifoPc_1}, {fifoPc_0}};
+  wire [3:0][31:0] _GEN_0 = {{fifoInst_3}, {fifoInst_2}, {fifoInst_1}, {fifoInst_0}};
   always @(posedge clock) begin
+    automatic logic enqueue;
+    enqueue = ~io_jump & ~draining & responseFire;
     if (reset) begin
-      state <= 2'h0;
-      pcReg <= 32'h0;
-      requestPc <= 32'h0;
-      outInst <= 32'h0;
-      outPc <= 32'h0;
+      fetchPc <= 32'h0;
+      responsePc <= 32'h0;
+      inFlight <= 1'h0;
+      draining <= 1'h0;
+      head <= 2'h0;
+      tail <= 2'h0;
+      count <= 3'h0;
     end
     else begin
-      automatic logic receive;
-      automatic logic redirect;
-      receive = state == 2'h1 & io_cacheRespValid;
-      redirect = io_out_valid_0 & io_jump;
-      if (state == 2'h2)
-        state <= {~(redirect | io_out_ready), 1'h0};
-      else if (state == 2'h1) begin
-        if (receive)
-          state <= 2'h2;
+      automatic logic _draining_T_2;
+      _draining_T_2 = draining & responseFire;
+      if (io_jump) begin
+        fetchPc <= io_jumptarget;
+        inFlight <= inFlight & ~responseFire;
+        draining <= inFlight & ~responseFire;
+        head <= 2'h0;
+        tail <= 2'h0;
+        count <= 3'h0;
+      end
+      else begin
+        automatic logic dequeue;
+        dequeue = (|count) & io_out_ready;
+        if (~draining & requestFire)
+          fetchPc <= fetchPc + 32'h4;
+        if (draining)
+          inFlight <= ~responseFire & inFlight;
         else
-          state <= 2'h1;
+          inFlight <= requestFire | inFlight & ~responseFire;
+        draining <= ~_draining_T_2 & draining;
+        if (~draining & dequeue)
+          head <= head + 2'h1;
+        if (enqueue)
+          tail <= tail + 2'h1;
+        if (draining) begin
+        end
+        else if (responseFire & ~dequeue)
+          count <= count + 3'h1;
+        else if (~responseFire & dequeue)
+          count <= count - 3'h1;
       end
-      else
-        state <= {1'h0, ~(|state) & issue};
-      if (redirect)
-        pcReg <= io_jumptarget;
-      else if (issue)
-        pcReg <= pcReg + 32'h4;
-      if (issue)
-        requestPc <= pcReg;
-      if (receive) begin
-        outInst <= io_cacheRespInst;
-        outPc <= requestPc;
-      end
+      if (io_jump & (~inFlight | responseFire))
+        responsePc <= io_jumptarget;
+      else if (_draining_T_2)
+        responsePc <= fetchPc;
+      else if (~draining & responseFire)
+        responsePc <= responsePc + 32'h4;
+    end
+    if (enqueue & tail == 2'h0) begin
+      fifoPc_0 <= responsePc;
+      fifoInst_0 <= io_cacheRespInst;
+    end
+    if (enqueue & tail == 2'h1) begin
+      fifoPc_1 <= responsePc;
+      fifoInst_1 <= io_cacheRespInst;
+    end
+    if (enqueue & tail == 2'h2) begin
+      fifoPc_2 <= responsePc;
+      fifoInst_2 <= io_cacheRespInst;
+    end
+    if (enqueue & (&tail)) begin
+      fifoPc_3 <= responsePc;
+      fifoInst_3 <= io_cacheRespInst;
     end
   end // always @(posedge)
-  assign io_out_valid = io_out_valid_0;
-  assign io_out_bits_inst = outInst;
-  assign io_out_bits_pc = outPc;
-  assign io_cacheReq = issue;
-  assign io_cacheAddr = pcReg;
+  assign io_out_valid = |count;
+  assign io_out_bits_inst = _GEN_0[head];
+  assign io_out_bits_pc = _GEN[head];
+  assign io_cacheReq = requestFire;
+  assign io_cacheAddr = fetchPc;
 endmodule
 

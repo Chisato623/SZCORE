@@ -19,6 +19,9 @@ module cpu_core(
   input         daccess_wresp
 );
 
+  wire        _ifu_io_out_valid;
+  wire [31:0] _ifu_io_out_bits_inst;
+  wire [31:0] _ifu_io_out_bits_pc;
   wire [31:0] _csr_io_readval;
   wire [31:0] _gpr_io_rs1data;
   wire [31:0] _gpr_io_rs2data;
@@ -65,12 +68,6 @@ module cpu_core(
   wire        _idu_io_csr_set;
   wire        _idu_io_csr_clear;
   wire [11:0] _idu_io_csraddr;
-  reg  [31:0] fetch_pc;
-  reg         fetch_pending;
-  reg         fetch_dropResponse;
-  reg         fetch_responseValid;
-  reg  [31:0] fetch_responsePc;
-  reg  [31:0] fetch_responseInst;
   reg         ifId_valid;
   reg  [31:0] ifId_pc;
   reg  [31:0] ifId_inst;
@@ -180,20 +177,31 @@ module cpu_core(
   wire        memoryStall =
     exMem_valid & memOperation
     & ~(~exMem_valid | ~memOperation | _lsu_io_loadDone | _lsu_io_storeDone);
+  wire        _decodeUsesRs2_T = ifId_inst[6:0] == 7'h33;
+  wire        _decodeUsesRs2_T_1 = ifId_inst[6:0] == 7'h23;
+  wire        _decodeUsesRs2_T_3 = ifId_inst[6:0] == 7'h63;
+  wire        loadUseStall =
+    ifId_valid & idEx_valid & idEx_memLoad & (|idEx_rd)
+    & ((_decodeUsesRs2_T | ifId_inst[6:0] == 7'h13 | ifId_inst[6:0] == 7'h3
+        | _decodeUsesRs2_T_1 | _decodeUsesRs2_T_3 | ifId_inst[6:0] == 7'h67
+        | ifId_inst[6:0] == 7'h73 & (|(ifId_inst[14:12]))) & idEx_rd == _idu_io_rs1addr
+       | (_decodeUsesRs2_T | _decodeUsesRs2_T_1 | _decodeUsesRs2_T_3)
+       & idEx_rd == _idu_io_rs2addr);
   wire        systemInFlight =
     idEx_valid & (idEx_csr | idEx_ecall | idEx_mret) | exMem_valid & exMem_csr
     | _systemInFlight_T_5;
-  wire        fetchAllowed =
-    ~fetch_pending & ~fetch_responseValid & ~ifId_valid & ~memoryStall & ~executeStall
+  wire        csrStall =
+    ifId_valid & (_idu_io_csr | _idu_io_ecall | _idu_io_mret)
+    & (idEx_valid | exMem_valid | memWb_valid);
+  wire        decodeAdvance =
+    ifId_valid & ~memoryStall & ~executeStall & ~loadUseStall & ~csrStall
     & ~systemInFlight & ~redirect;
+  wire        fifoPop =
+    _ifu_io_out_valid & ~memoryStall & ~executeStall & ~systemInFlight & ~redirect
+    & ~loadUseStall & ~csrStall & (~ifId_valid | decodeAdvance);
+  wire        _ifu_io_stall_T = memoryStall | executeStall;
   always @(posedge cpu_clk) begin
     if (cpu_rst) begin
-      fetch_pc <= 32'h0;
-      fetch_pending <= 1'h0;
-      fetch_dropResponse <= 1'h0;
-      fetch_responseValid <= 1'h0;
-      fetch_responsePc <= 32'h0;
-      fetch_responseInst <= 32'h0;
       ifId_valid <= 1'h0;
       ifId_pc <= 32'h0;
       ifId_inst <= 32'h0;
@@ -262,70 +270,16 @@ module cpu_core(
       memWb_csrOpValue <= 32'h0;
     end
     else begin
-      automatic logic _decodeUsesRs2_T = ifId_inst[6:0] == 7'h33;
-      automatic logic _decodeUsesRs2_T_1 = ifId_inst[6:0] == 7'h23;
-      automatic logic _decodeUsesRs2_T_3 = ifId_inst[6:0] == 7'h63;
-      automatic logic loadUseStall;
-      automatic logic csrStall;
-      automatic logic _GEN_0 = memoryStall | executeStall;
+      automatic logic _GEN_0;
       automatic logic _GEN_1;
-      automatic logic _GEN_2;
-      automatic logic _GEN_3;
-      automatic logic _GEN_4;
-      loadUseStall =
-        ifId_valid & idEx_valid & idEx_memLoad & (|idEx_rd)
-        & ((_decodeUsesRs2_T | ifId_inst[6:0] == 7'h13 | ifId_inst[6:0] == 7'h3
-            | _decodeUsesRs2_T_1 | _decodeUsesRs2_T_3 | ifId_inst[6:0] == 7'h67
-            | ifId_inst[6:0] == 7'h73 & (|(ifId_inst[14:12])))
-           & idEx_rd == _idu_io_rs1addr
-           | (_decodeUsesRs2_T | _decodeUsesRs2_T_1 | _decodeUsesRs2_T_3)
-           & idEx_rd == _idu_io_rs2addr);
-      csrStall =
-        ifId_valid & (_idu_io_csr | _idu_io_ecall | _idu_io_mret)
-        & (idEx_valid | exMem_valid | memWb_valid);
-      _GEN_1 = redirect | loadUseStall;
-      _GEN_2 = loadUseStall | csrStall;
-      _GEN_3 = ifetch_valid & fetch_pending;
-      _GEN_4 =
-        fetch_responseValid & ~memoryStall & ~executeStall & ~systemInFlight
-        & ~ifId_valid;
-      if (redirect) begin
-        fetch_pc <=
-          idEx_ecall | idEx_mret
-            ? _csr_io_readval
-            : idEx_jalr ? exRs1 + idEx_imm & 32'hFFFFFFFE : idEx_pc + idEx_imm;
-        fetch_dropResponse <= fetch_pending | fetch_dropResponse;
-      end
-      else begin
-        if (_GEN_3 | _GEN_4 | ~fetchAllowed) begin
-        end
-        else
-          fetch_pc <= fetch_pc + 32'h4;
-        fetch_pending <= ~_GEN_3 & (~_GEN_4 & fetchAllowed | fetch_pending);
-        fetch_dropResponse <= ~_GEN_3 & fetch_dropResponse;
-      end
-      fetch_responseValid <=
-        ~redirect
-        & (_GEN_3
-             ? ~fetch_dropResponse | fetch_responseValid
-             : ~_GEN_4 & fetch_responseValid);
-      if (redirect | ~(_GEN_3 & ~fetch_dropResponse)) begin
-      end
-      else begin
-        fetch_responsePc <= fetch_pc - 32'h4;
-        fetch_responseInst <= ifetch_inst;
-      end
-      if (~_GEN_0) begin
+      _GEN_0 = redirect | loadUseStall;
+      _GEN_1 = loadUseStall | csrStall;
+      if (~_ifu_io_stall_T) begin
         automatic logic [31:0] exAluResult =
           idEx_muldiv ? _mulDiv_io_result : _exu_io_result;
-        automatic logic        decodeAdvance;
-        decodeAdvance =
-          ifId_valid & ~memoryStall & ~executeStall & ~loadUseStall & ~csrStall
-          & ~systemInFlight & ~redirect;
         ifId_valid <=
-          ~redirect
-          & (_GEN_2 ? ifId_valid : fetch_responseValid | ~decodeAdvance & ifId_valid);
-        idEx_valid <= ~_GEN_1 & decodeAdvance;
+          ~redirect & (_GEN_1 ? ifId_valid : fifoPop | ~decodeAdvance & ifId_valid);
+        idEx_valid <= ~_GEN_0 & decodeAdvance;
         exMem_valid <= idEx_valid;
         exMem_pc <= idEx_pc;
         exMem_aluResult <= exAluResult;
@@ -357,13 +311,13 @@ module cpu_core(
         memWb_csrAddr <= exMem_csrAddr;
         memWb_csrOpValue <= exMem_csrOpValue;
       end
-      if (_GEN_0 | redirect | _GEN_2 | ~fetch_responseValid) begin
+      if (_ifu_io_stall_T | redirect | _GEN_1 | ~fifoPop) begin
       end
       else begin
-        ifId_pc <= fetch_responsePc;
-        ifId_inst <= fetch_responseInst;
+        ifId_pc <= _ifu_io_out_bits_pc;
+        ifId_inst <= _ifu_io_out_bits_inst;
       end
-      if (~(_GEN_0 | _GEN_1)) begin
+      if (~(_ifu_io_stall_T | _GEN_0)) begin
         idEx_pc <= ifId_pc;
         idEx_rs1 <=
           _memWbForwardable_T & (|memWb_rd) & memWb_rd == _idu_io_rs1addr
@@ -516,8 +470,24 @@ module cpu_core(
     .io_we      (_systemInFlight_T_5 & (memWb_csrWrite | memWb_csrSet | memWb_csrClear)),
     .io_readval (_csr_io_readval)
   );
-  assign ifetch_req = fetchAllowed;
-  assign ifetch_addr = fetch_pc;
+  IFU ifu (
+    .clock             (cpu_clk),
+    .reset             (cpu_rst),
+    .io_out_ready      (fifoPop),
+    .io_out_valid      (_ifu_io_out_valid),
+    .io_out_bits_inst  (_ifu_io_out_bits_inst),
+    .io_out_bits_pc    (_ifu_io_out_bits_pc),
+    .io_cacheReq       (ifetch_req),
+    .io_cacheAddr      (ifetch_addr),
+    .io_cacheRespValid (ifetch_valid),
+    .io_cacheRespInst  (ifetch_inst),
+    .io_jump           (redirect),
+    .io_jumptarget
+      (idEx_ecall | idEx_mret
+         ? _csr_io_readval
+         : idEx_jalr ? exRs1 + idEx_imm & 32'hFFFFFFFE : idEx_pc + idEx_imm),
+    .io_stall          (_ifu_io_stall_T | systemInFlight)
+  );
   assign daccess_ren = {4{_lsu_io_cacheReq & ~_lsu_io_cacheWrite}};
   assign daccess_wen = _lsu_io_cacheReq & _lsu_io_cacheWrite ? _lsu_io_cacheWStrb : 4'h0;
 

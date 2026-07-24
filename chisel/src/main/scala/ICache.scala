@@ -36,12 +36,14 @@ class ICache(
   val tagArray = Reg(Vec(sets, UInt(tagBits.W)))
   val dataArray = Reg(Vec(sets, UInt((wordsPerLine * axiConfig.dataWidth).W)))
 
-  val sIdle :: sLookup :: sReadAddress :: sReadData :: sRespond :: Nil = Enum(5)
+  val sIdle :: sReadAddress :: sReadData :: sRespond :: Nil = Enum(4)
   val state = RegInit(sIdle)
   val nextState = WireDefault(state)
 
   val requestAddr = Reg(UInt(axiConfig.addrWidth.W))
-  val responseInst = Reg(UInt(axiConfig.dataWidth.W))
+  val hitResponseValid = RegInit(false.B)
+  val hitResponseInst = Reg(UInt(axiConfig.dataWidth.W))
+  val missResponseInst = Reg(UInt(axiConfig.dataWidth.W))
   val fillWordOffset = RegInit(0.U(wordOffsetBits.W))
 
   val requestIndex = requestAddr(lineOffsetBits + indexBits - 1, lineOffsetBits)
@@ -49,37 +51,41 @@ class ICache(
   val requestWordOffset = requestAddr(lineOffsetBits - 1, byteOffsetBits)
   val lineBase = Cat(requestAddr(axiConfig.addrWidth - 1, lineOffsetBits), 0.U(lineOffsetBits.W))
 
-  val cacheLine = dataArray(requestIndex)
-  val hit = validArray(requestIndex) && tagArray(requestIndex) === requestTag
-  val hitInst = MuxLookup(requestWordOffset, 0.U(axiConfig.dataWidth.W))(Seq(
-    0.U -> cacheLine(31, 0),
-    1.U -> cacheLine(63, 32),
-    2.U -> cacheLine(95, 64),
-    3.U -> cacheLine(127, 96)
+  val lookupIndex = io.cpuAddr(lineOffsetBits + indexBits - 1, lineOffsetBits)
+  val lookupTag = io.cpuAddr(axiConfig.addrWidth - 1, lineOffsetBits + indexBits)
+  val lookupWordOffset = io.cpuAddr(lineOffsetBits - 1, byteOffsetBits)
+  val lookupLine = dataArray(lookupIndex)
+  val lookupHit = validArray(lookupIndex) && tagArray(lookupIndex) === lookupTag
+  val lookupInst = MuxLookup(lookupWordOffset, 0.U(axiConfig.dataWidth.W))(Seq(
+    0.U -> lookupLine(31, 0),
+    1.U -> lookupLine(63, 32),
+    2.U -> lookupLine(95, 64),
+    3.U -> lookupLine(127, 96)
   ))
+  val cacheLine = dataArray(requestIndex)
 
   val arHandshake = io.axi.ar.arvalid && io.axi.ar.arready
   val rHandshake = io.axi.r.rvalid && io.axi.r.rready
   val fillEnable = state === sReadData && rHandshake
   val fillLast = fillEnable && io.axi.r.rlast
   val fillTargetWord = fillEnable && fillWordOffset === requestWordOffset
-  val missStart = state === sLookup && !hit
+  // A response cycle can also accept the next request.  CpuCore therefore
+  // keeps the original req/valid interface while sustaining one hit per cycle.
+  val requestFire = (state === sIdle || state === sRespond) && io.cpuReq
+  val missStart = requestFire && !lookupHit
 
   nextState := MuxLookup(state, sIdle)(Seq(
-    sIdle -> Mux(io.cpuReq, sLookup, sIdle),
-    sLookup -> Mux(hit, sRespond, sReadAddress),
+    sIdle -> Mux(requestFire && !lookupHit, sReadAddress, sIdle),
     sReadAddress -> Mux(arHandshake, sReadData, sReadAddress),
     sReadData -> Mux(fillLast, sRespond, sReadData),
-    sRespond -> sIdle
+    sRespond -> Mux(requestFire && !lookupHit, sReadAddress, sIdle)
   ))
   state := nextState
 
-  requestAddr := Mux(state === sIdle && io.cpuReq, io.cpuAddr, requestAddr)
-  responseInst := Mux(
-    state === sLookup && hit,
-    hitInst,
-    Mux(fillTargetWord, io.axi.r.rdata, responseInst)
-  )
+  requestAddr := Mux(missStart, io.cpuAddr, requestAddr)
+  hitResponseValid := requestFire && lookupHit
+  hitResponseInst := Mux(requestFire && lookupHit, lookupInst, hitResponseInst)
+  missResponseInst := Mux(fillTargetWord, io.axi.r.rdata, missResponseInst)
   fillWordOffset := Mux(
     missStart,
     0.U(wordOffsetBits.W),
@@ -96,8 +102,10 @@ class ICache(
   tagArray(requestIndex) := Mux(fillLast, requestTag, tagArray(requestIndex))
   validArray(requestIndex) := Mux(fillLast, true.B, validArray(requestIndex))
 
-  io.cpuRespValid := state === sRespond
-  io.cpuRespInst := responseInst
+  // Hits use a one-cycle response pipeline and may be accepted every cycle.
+  // A miss owns the cache until its complete AXI line fill has been received.
+  io.cpuRespValid := hitResponseValid || state === sRespond
+  io.cpuRespInst := Mux(hitResponseValid, hitResponseInst, missResponseInst)
 
   io.axi.ar.arid := 0.U
   io.axi.ar.araddr := lineBase

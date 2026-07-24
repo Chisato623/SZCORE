@@ -4,12 +4,21 @@ import chisel3._
 import chisel3.util._
 
 class IFUMessage extends Bundle {
-  val inst = Output(UInt(32.W))
-  val pc = Output(SInt(32.W))
+  val inst = UInt(32.W)
+  val pc = UInt(32.W)
 }
 
-/** Program counter and ICache request/response adapter. */
+/**
+  * Decoupled instruction front end.
+  *
+  * The ICache interface intentionally keeps the legacy req/valid protocol.
+  * A four-entry FIFO absorbs hit responses while decode consumes older
+  * instructions.  A redirect drops queued entries and drains any old response
+  * before fetching from the target PC.
+  */
 class IFU extends Module {
+  private val fifoDepth = 4
+
   val io = IO(new Bundle {
     val out = Decoupled(new IFUMessage)
     val cacheReq = Output(Bool())
@@ -17,34 +26,57 @@ class IFU extends Module {
     val cacheRespValid = Input(Bool())
     val cacheRespInst = Input(UInt(32.W))
     val jump = Input(Bool())
-    val jumptarget = Input(SInt(32.W))
+    val jumptarget = Input(UInt(32.W))
     val stall = Input(Bool())
   })
 
-  val sIdle :: sWaitCache :: sOutput :: Nil = Enum(3)
-  val state = RegInit(sIdle)
-  val pcReg = RegInit(0.S(32.W))
-  val requestPc = RegInit(0.S(32.W))
-  val outInst = RegInit(0.U(32.W))
-  val outPc = RegInit(0.S(32.W))
+  val fetchPc = RegInit(0.U(32.W))
+  val responsePc = RegInit(0.U(32.W))
+  val inFlight = RegInit(false.B)
+  val draining = RegInit(false.B)
+  val fifoPc = Reg(Vec(fifoDepth, UInt(32.W)))
+  val fifoInst = Reg(Vec(fifoDepth, UInt(32.W)))
+  val head = RegInit(0.U(2.W))
+  val tail = RegInit(0.U(2.W))
+  val count = RegInit(0.U(3.W))
 
-  val issue = state === sIdle && !io.stall
-  val receive = state === sWaitCache && io.cacheRespValid
-  val redirect = state === sOutput && io.out.valid && io.jump
+  val responseFire = io.cacheRespValid && inFlight
+  val fetchSlotAvailable = !inFlight || responseFire
+  val requestFire = fetchSlotAvailable && !io.stall && !io.jump && !draining && count < fifoDepth.U
+  val dequeue = io.out.valid && io.out.ready
 
-  state := MuxLookup(state, sIdle)(Seq(
-    sIdle -> Mux(issue, sWaitCache, sIdle),
-    sWaitCache -> Mux(receive, sOutput, sWaitCache),
-    sOutput -> Mux(redirect || io.out.ready, sIdle, sOutput)
-  ))
-  pcReg := Mux(redirect, io.jumptarget, Mux(issue, pcReg + 4.S, pcReg))
-  requestPc := Mux(issue, pcReg, requestPc)
-  outInst := Mux(receive, io.cacheRespInst, outInst)
-  outPc := Mux(receive, requestPc, outPc)
+  io.cacheReq := requestFire
+  io.cacheAddr := fetchPc
+  io.out.valid := count =/= 0.U
+  io.out.bits.pc := fifoPc(head)
+  io.out.bits.inst := fifoInst(head)
 
-  io.cacheReq := issue
-  io.cacheAddr := pcReg.asUInt
-  io.out.valid := state === sOutput
-  io.out.bits.inst := outInst
-  io.out.bits.pc := outPc
+  val enqueue = !io.jump && !draining && responseFire
+  val normalCount = Mux(
+    responseFire && !dequeue,
+    count + 1.U,
+    Mux(!responseFire && dequeue, count - 1.U, count)
+  )
+
+  fetchPc := Mux(io.jump, io.jumptarget, Mux(!draining && requestFire, fetchPc + 4.U, fetchPc))
+  responsePc := Mux(
+    io.jump && (!inFlight || responseFire),
+    io.jumptarget,
+    Mux(draining && responseFire, fetchPc, Mux(!draining && responseFire, responsePc + 4.U, responsePc))
+  )
+  inFlight := Mux(
+    io.jump,
+    inFlight && !responseFire,
+    Mux(draining, Mux(responseFire, false.B, inFlight), requestFire || (inFlight && !responseFire))
+  )
+  draining := Mux(io.jump, inFlight && !responseFire, Mux(draining && responseFire, false.B, draining))
+  head := Mux(io.jump, 0.U, Mux(!draining && dequeue, head + 1.U, head))
+  tail := Mux(io.jump, 0.U, Mux(enqueue, tail + 1.U, tail))
+  count := Mux(io.jump, 0.U, Mux(draining, count, normalCount))
+
+  for (index <- 0 until fifoDepth) {
+    val writeSlot = enqueue && tail === index.U
+    fifoPc(index) := Mux(writeSlot, responsePc, fifoPc(index))
+    fifoInst(index) := Mux(writeSlot, io.cacheRespInst, fifoInst(index))
+  }
 }

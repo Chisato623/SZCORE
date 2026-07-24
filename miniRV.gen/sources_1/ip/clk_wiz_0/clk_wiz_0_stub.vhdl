@@ -2,9 +2,10 @@
 -- Copyright 2022-2023 Advanced Micro Devices, Inc. All Rights Reserved.
 -- --------------------------------------------------------------------------------
 -- Tool Version: Vivado v.2023.1 (win64) Build 3865809 Sun May  7 15:05:29 MDT 2023
--- Date        : Thu Jul 23 22:53:52 2026
+-- Date        : Thu Jul 23 22:28:42 2026
 -- Host        : Ypa running 64-bit major release  (build 9200)
--- Command     : write_vhdl -force -mode synth_stub e:/SZCORE_ADAPTED/miniRV.gen/sources_1/ip/clk_wiz_0/clk_wiz_0_stub.vhdl
+-- Command     : write_vhdl -force -mode synth_stub -rename_top clk_wiz_0 -prefix
+--               clk_wiz_0_ clk_wiz_0_stub.vhdl
 -- Design      : clk_wiz_0
 -- Purpose     : Stub declaration of top-level module interface
 -- Device      : xc7a100tfgg484-1

@@ -211,12 +211,14 @@ module ICache(
   reg  [127:0] dataArray_61;
   reg  [127:0] dataArray_62;
   reg  [127:0] dataArray_63;
-  reg  [2:0]   state;
+  reg  [1:0]   state;
   reg  [31:0]  requestAddr;
-  reg  [31:0]  responseInst;
+  reg          hitResponseValid;
+  reg  [31:0]  hitResponseInst;
+  reg  [31:0]  missResponseInst;
   reg  [1:0]   fillWordOffset;
-  wire         io_axi_r_rready_0 = state == 3'h3;
-  wire         io_axi_ar_arvalid_0 = state == 3'h2;
+  wire         io_axi_r_rready_0 = state == 2'h2;
+  wire         io_axi_ar_arvalid_0 = state == 2'h1;
   always @(posedge clock) begin
     automatic logic [63:0][21:0]  _GEN =
       {{tagArray_63},
@@ -283,8 +285,82 @@ module ICache(
        {tagArray_2},
        {tagArray_1},
        {tagArray_0}};
-    automatic logic [21:0]        _GEN_0;
-    automatic logic [63:0]        _GEN_1 =
+    automatic logic [63:0]        _GEN_0;
+    automatic logic               lookupHit;
+    automatic logic [63:0][127:0] _GEN_1;
+    automatic logic               fillEnable;
+    automatic logic               fillLast;
+    automatic logic               requestFire;
+    automatic logic               missStart;
+    automatic logic               _hitResponseInst_T;
+    automatic logic [127:0]       _GEN_2;
+    automatic logic [3:0][127:0]  _GEN_3;
+    automatic logic [127:0]       filledLine;
+    automatic logic               _GEN_4;
+    automatic logic               _GEN_5;
+    automatic logic               _GEN_6;
+    automatic logic               _GEN_7;
+    automatic logic               _GEN_8;
+    automatic logic               _GEN_9;
+    automatic logic               _GEN_10;
+    automatic logic               _GEN_11;
+    automatic logic               _GEN_12;
+    automatic logic               _GEN_13;
+    automatic logic               _GEN_14;
+    automatic logic               _GEN_15;
+    automatic logic               _GEN_16;
+    automatic logic               _GEN_17;
+    automatic logic               _GEN_18;
+    automatic logic               _GEN_19;
+    automatic logic               _GEN_20;
+    automatic logic               _GEN_21;
+    automatic logic               _GEN_22;
+    automatic logic               _GEN_23;
+    automatic logic               _GEN_24;
+    automatic logic               _GEN_25;
+    automatic logic               _GEN_26;
+    automatic logic               _GEN_27;
+    automatic logic               _GEN_28;
+    automatic logic               _GEN_29;
+    automatic logic               _GEN_30;
+    automatic logic               _GEN_31;
+    automatic logic               _GEN_32;
+    automatic logic               _GEN_33;
+    automatic logic               _GEN_34;
+    automatic logic               _GEN_35;
+    automatic logic               _GEN_36;
+    automatic logic               _GEN_37;
+    automatic logic               _GEN_38;
+    automatic logic               _GEN_39;
+    automatic logic               _GEN_40;
+    automatic logic               _GEN_41;
+    automatic logic               _GEN_42;
+    automatic logic               _GEN_43;
+    automatic logic               _GEN_44;
+    automatic logic               _GEN_45;
+    automatic logic               _GEN_46;
+    automatic logic               _GEN_47;
+    automatic logic               _GEN_48;
+    automatic logic               _GEN_49;
+    automatic logic               _GEN_50;
+    automatic logic               _GEN_51;
+    automatic logic               _GEN_52;
+    automatic logic               _GEN_53;
+    automatic logic               _GEN_54;
+    automatic logic               _GEN_55;
+    automatic logic               _GEN_56;
+    automatic logic               _GEN_57;
+    automatic logic               _GEN_58;
+    automatic logic               _GEN_59;
+    automatic logic               _GEN_60;
+    automatic logic               _GEN_61;
+    automatic logic               _GEN_62;
+    automatic logic               _GEN_63;
+    automatic logic               _GEN_64;
+    automatic logic               _GEN_65;
+    automatic logic               _GEN_66;
+    automatic logic [21:0]        _GEN_67;
+    _GEN_0 =
       {{validArray_63},
        {validArray_62},
        {validArray_61},
@@ -349,9 +425,8 @@ module ICache(
        {validArray_2},
        {validArray_1},
        {validArray_0}};
-    automatic logic               _GEN_2;
-    automatic logic               hit;
-    automatic logic [63:0][127:0] _GEN_3 =
+    lookupHit = _GEN_0[io_cpuAddr[9:4]] & _GEN[io_cpuAddr[9:4]] == io_cpuAddr[31:10];
+    _GEN_1 =
       {{dataArray_63},
        {dataArray_62},
        {dataArray_61},
@@ -416,151 +491,82 @@ module ICache(
        {dataArray_2},
        {dataArray_1},
        {dataArray_0}};
-    automatic logic [127:0]       _GEN_4;
-    automatic logic               fillEnable;
-    automatic logic               fillLast;
-    automatic logic               _responseInst_T;
-    automatic logic [3:0][127:0]  _GEN_5;
-    automatic logic [127:0]       filledLine;
-    automatic logic               _GEN_6;
-    automatic logic               _GEN_7;
-    automatic logic               _GEN_8;
-    automatic logic               _GEN_9;
-    automatic logic               _GEN_10;
-    automatic logic               _GEN_11;
-    automatic logic               _GEN_12;
-    automatic logic               _GEN_13;
-    automatic logic               _GEN_14;
-    automatic logic               _GEN_15;
-    automatic logic               _GEN_16;
-    automatic logic               _GEN_17;
-    automatic logic               _GEN_18;
-    automatic logic               _GEN_19;
-    automatic logic               _GEN_20;
-    automatic logic               _GEN_21;
-    automatic logic               _GEN_22;
-    automatic logic               _GEN_23;
-    automatic logic               _GEN_24;
-    automatic logic               _GEN_25;
-    automatic logic               _GEN_26;
-    automatic logic               _GEN_27;
-    automatic logic               _GEN_28;
-    automatic logic               _GEN_29;
-    automatic logic               _GEN_30;
-    automatic logic               _GEN_31;
-    automatic logic               _GEN_32;
-    automatic logic               _GEN_33;
-    automatic logic               _GEN_34;
-    automatic logic               _GEN_35;
-    automatic logic               _GEN_36;
-    automatic logic               _GEN_37;
-    automatic logic               _GEN_38;
-    automatic logic               _GEN_39;
-    automatic logic               _GEN_40;
-    automatic logic               _GEN_41;
-    automatic logic               _GEN_42;
-    automatic logic               _GEN_43;
-    automatic logic               _GEN_44;
-    automatic logic               _GEN_45;
-    automatic logic               _GEN_46;
-    automatic logic               _GEN_47;
-    automatic logic               _GEN_48;
-    automatic logic               _GEN_49;
-    automatic logic               _GEN_50;
-    automatic logic               _GEN_51;
-    automatic logic               _GEN_52;
-    automatic logic               _GEN_53;
-    automatic logic               _GEN_54;
-    automatic logic               _GEN_55;
-    automatic logic               _GEN_56;
-    automatic logic               _GEN_57;
-    automatic logic               _GEN_58;
-    automatic logic               _GEN_59;
-    automatic logic               _GEN_60;
-    automatic logic               _GEN_61;
-    automatic logic               _GEN_62;
-    automatic logic               _GEN_63;
-    automatic logic               _GEN_64;
-    automatic logic               _GEN_65;
-    automatic logic               _GEN_66;
-    automatic logic               _GEN_67;
-    automatic logic               _GEN_68;
-    _GEN_0 = _GEN[requestAddr[9:4]];
-    _GEN_2 = _GEN_1[requestAddr[9:4]];
-    hit = _GEN_2 & _GEN_0 == requestAddr[31:10];
-    _GEN_4 = _GEN_3[requestAddr[9:4]];
     fillEnable = io_axi_r_rready_0 & io_axi_r_rvalid;
     fillLast = fillEnable & io_axi_r_rlast;
-    _responseInst_T = state == 3'h1;
-    _GEN_5 =
-      {{{io_axi_r_rdata, _GEN_4[95:0]}},
-       {{_GEN_4[127:96], io_axi_r_rdata, _GEN_4[63:0]}},
-       {{_GEN_4[127:64], io_axi_r_rdata, _GEN_4[31:0]}},
-       {{_GEN_4[127:32], io_axi_r_rdata}}};
-    filledLine = _GEN_5[fillWordOffset];
-    _GEN_6 = requestAddr[9:4] == 6'h0;
-    _GEN_7 = requestAddr[9:4] == 6'h1;
-    _GEN_8 = requestAddr[9:4] == 6'h2;
-    _GEN_9 = requestAddr[9:4] == 6'h3;
-    _GEN_10 = requestAddr[9:4] == 6'h4;
-    _GEN_11 = requestAddr[9:4] == 6'h5;
-    _GEN_12 = requestAddr[9:4] == 6'h6;
-    _GEN_13 = requestAddr[9:4] == 6'h7;
-    _GEN_14 = requestAddr[9:4] == 6'h8;
-    _GEN_15 = requestAddr[9:4] == 6'h9;
-    _GEN_16 = requestAddr[9:4] == 6'hA;
-    _GEN_17 = requestAddr[9:4] == 6'hB;
-    _GEN_18 = requestAddr[9:4] == 6'hC;
-    _GEN_19 = requestAddr[9:4] == 6'hD;
-    _GEN_20 = requestAddr[9:4] == 6'hE;
-    _GEN_21 = requestAddr[9:4] == 6'hF;
-    _GEN_22 = requestAddr[9:4] == 6'h10;
-    _GEN_23 = requestAddr[9:4] == 6'h11;
-    _GEN_24 = requestAddr[9:4] == 6'h12;
-    _GEN_25 = requestAddr[9:4] == 6'h13;
-    _GEN_26 = requestAddr[9:4] == 6'h14;
-    _GEN_27 = requestAddr[9:4] == 6'h15;
-    _GEN_28 = requestAddr[9:4] == 6'h16;
-    _GEN_29 = requestAddr[9:4] == 6'h17;
-    _GEN_30 = requestAddr[9:4] == 6'h18;
-    _GEN_31 = requestAddr[9:4] == 6'h19;
-    _GEN_32 = requestAddr[9:4] == 6'h1A;
-    _GEN_33 = requestAddr[9:4] == 6'h1B;
-    _GEN_34 = requestAddr[9:4] == 6'h1C;
-    _GEN_35 = requestAddr[9:4] == 6'h1D;
-    _GEN_36 = requestAddr[9:4] == 6'h1E;
-    _GEN_37 = requestAddr[9:4] == 6'h1F;
-    _GEN_38 = requestAddr[9:4] == 6'h20;
-    _GEN_39 = requestAddr[9:4] == 6'h21;
-    _GEN_40 = requestAddr[9:4] == 6'h22;
-    _GEN_41 = requestAddr[9:4] == 6'h23;
-    _GEN_42 = requestAddr[9:4] == 6'h24;
-    _GEN_43 = requestAddr[9:4] == 6'h25;
-    _GEN_44 = requestAddr[9:4] == 6'h26;
-    _GEN_45 = requestAddr[9:4] == 6'h27;
-    _GEN_46 = requestAddr[9:4] == 6'h28;
-    _GEN_47 = requestAddr[9:4] == 6'h29;
-    _GEN_48 = requestAddr[9:4] == 6'h2A;
-    _GEN_49 = requestAddr[9:4] == 6'h2B;
-    _GEN_50 = requestAddr[9:4] == 6'h2C;
-    _GEN_51 = requestAddr[9:4] == 6'h2D;
-    _GEN_52 = requestAddr[9:4] == 6'h2E;
-    _GEN_53 = requestAddr[9:4] == 6'h2F;
-    _GEN_54 = requestAddr[9:4] == 6'h30;
-    _GEN_55 = requestAddr[9:4] == 6'h31;
-    _GEN_56 = requestAddr[9:4] == 6'h32;
-    _GEN_57 = requestAddr[9:4] == 6'h33;
-    _GEN_58 = requestAddr[9:4] == 6'h34;
-    _GEN_59 = requestAddr[9:4] == 6'h35;
-    _GEN_60 = requestAddr[9:4] == 6'h36;
-    _GEN_61 = requestAddr[9:4] == 6'h37;
-    _GEN_62 = requestAddr[9:4] == 6'h38;
-    _GEN_63 = requestAddr[9:4] == 6'h39;
-    _GEN_64 = requestAddr[9:4] == 6'h3A;
-    _GEN_65 = requestAddr[9:4] == 6'h3B;
-    _GEN_66 = requestAddr[9:4] == 6'h3C;
-    _GEN_67 = requestAddr[9:4] == 6'h3D;
-    _GEN_68 = requestAddr[9:4] == 6'h3E;
+    requestFire = (state == 2'h0 | (&state)) & io_cpuReq;
+    missStart = requestFire & ~lookupHit;
+    _hitResponseInst_T = requestFire & lookupHit;
+    _GEN_2 = _GEN_1[requestAddr[9:4]];
+    _GEN_3 =
+      {{{io_axi_r_rdata, _GEN_2[95:0]}},
+       {{_GEN_2[127:96], io_axi_r_rdata, _GEN_2[63:0]}},
+       {{_GEN_2[127:64], io_axi_r_rdata, _GEN_2[31:0]}},
+       {{_GEN_2[127:32], io_axi_r_rdata}}};
+    filledLine = _GEN_3[fillWordOffset];
+    _GEN_4 = requestAddr[9:4] == 6'h0;
+    _GEN_5 = requestAddr[9:4] == 6'h1;
+    _GEN_6 = requestAddr[9:4] == 6'h2;
+    _GEN_7 = requestAddr[9:4] == 6'h3;
+    _GEN_8 = requestAddr[9:4] == 6'h4;
+    _GEN_9 = requestAddr[9:4] == 6'h5;
+    _GEN_10 = requestAddr[9:4] == 6'h6;
+    _GEN_11 = requestAddr[9:4] == 6'h7;
+    _GEN_12 = requestAddr[9:4] == 6'h8;
+    _GEN_13 = requestAddr[9:4] == 6'h9;
+    _GEN_14 = requestAddr[9:4] == 6'hA;
+    _GEN_15 = requestAddr[9:4] == 6'hB;
+    _GEN_16 = requestAddr[9:4] == 6'hC;
+    _GEN_17 = requestAddr[9:4] == 6'hD;
+    _GEN_18 = requestAddr[9:4] == 6'hE;
+    _GEN_19 = requestAddr[9:4] == 6'hF;
+    _GEN_20 = requestAddr[9:4] == 6'h10;
+    _GEN_21 = requestAddr[9:4] == 6'h11;
+    _GEN_22 = requestAddr[9:4] == 6'h12;
+    _GEN_23 = requestAddr[9:4] == 6'h13;
+    _GEN_24 = requestAddr[9:4] == 6'h14;
+    _GEN_25 = requestAddr[9:4] == 6'h15;
+    _GEN_26 = requestAddr[9:4] == 6'h16;
+    _GEN_27 = requestAddr[9:4] == 6'h17;
+    _GEN_28 = requestAddr[9:4] == 6'h18;
+    _GEN_29 = requestAddr[9:4] == 6'h19;
+    _GEN_30 = requestAddr[9:4] == 6'h1A;
+    _GEN_31 = requestAddr[9:4] == 6'h1B;
+    _GEN_32 = requestAddr[9:4] == 6'h1C;
+    _GEN_33 = requestAddr[9:4] == 6'h1D;
+    _GEN_34 = requestAddr[9:4] == 6'h1E;
+    _GEN_35 = requestAddr[9:4] == 6'h1F;
+    _GEN_36 = requestAddr[9:4] == 6'h20;
+    _GEN_37 = requestAddr[9:4] == 6'h21;
+    _GEN_38 = requestAddr[9:4] == 6'h22;
+    _GEN_39 = requestAddr[9:4] == 6'h23;
+    _GEN_40 = requestAddr[9:4] == 6'h24;
+    _GEN_41 = requestAddr[9:4] == 6'h25;
+    _GEN_42 = requestAddr[9:4] == 6'h26;
+    _GEN_43 = requestAddr[9:4] == 6'h27;
+    _GEN_44 = requestAddr[9:4] == 6'h28;
+    _GEN_45 = requestAddr[9:4] == 6'h29;
+    _GEN_46 = requestAddr[9:4] == 6'h2A;
+    _GEN_47 = requestAddr[9:4] == 6'h2B;
+    _GEN_48 = requestAddr[9:4] == 6'h2C;
+    _GEN_49 = requestAddr[9:4] == 6'h2D;
+    _GEN_50 = requestAddr[9:4] == 6'h2E;
+    _GEN_51 = requestAddr[9:4] == 6'h2F;
+    _GEN_52 = requestAddr[9:4] == 6'h30;
+    _GEN_53 = requestAddr[9:4] == 6'h31;
+    _GEN_54 = requestAddr[9:4] == 6'h32;
+    _GEN_55 = requestAddr[9:4] == 6'h33;
+    _GEN_56 = requestAddr[9:4] == 6'h34;
+    _GEN_57 = requestAddr[9:4] == 6'h35;
+    _GEN_58 = requestAddr[9:4] == 6'h36;
+    _GEN_59 = requestAddr[9:4] == 6'h37;
+    _GEN_60 = requestAddr[9:4] == 6'h38;
+    _GEN_61 = requestAddr[9:4] == 6'h39;
+    _GEN_62 = requestAddr[9:4] == 6'h3A;
+    _GEN_63 = requestAddr[9:4] == 6'h3B;
+    _GEN_64 = requestAddr[9:4] == 6'h3C;
+    _GEN_65 = requestAddr[9:4] == 6'h3D;
+    _GEN_66 = requestAddr[9:4] == 6'h3E;
+    _GEN_67 = _GEN[requestAddr[9:4]];
     if (reset) begin
       validArray_0 <= 1'h0;
       validArray_1 <= 1'h0;
@@ -626,811 +632,808 @@ module ICache(
       validArray_61 <= 1'h0;
       validArray_62 <= 1'h0;
       validArray_63 <= 1'h0;
-      state <= 3'h0;
+      state <= 2'h0;
+      hitResponseValid <= 1'h0;
       fillWordOffset <= 2'h0;
     end
     else begin
-      automatic logic _validArray_T;
-      _validArray_T = fillLast | _GEN_2;
-      if (_GEN_6)
+      automatic logic            _validArray_T;
+      automatic logic [3:0][1:0] _GEN_68;
+      _validArray_T = fillLast | _GEN_0[requestAddr[9:4]];
+      if (_GEN_4)
         validArray_0 <= _validArray_T;
-      if (_GEN_7)
+      if (_GEN_5)
         validArray_1 <= _validArray_T;
-      if (_GEN_8)
+      if (_GEN_6)
         validArray_2 <= _validArray_T;
-      if (_GEN_9)
+      if (_GEN_7)
         validArray_3 <= _validArray_T;
-      if (_GEN_10)
+      if (_GEN_8)
         validArray_4 <= _validArray_T;
-      if (_GEN_11)
+      if (_GEN_9)
         validArray_5 <= _validArray_T;
-      if (_GEN_12)
+      if (_GEN_10)
         validArray_6 <= _validArray_T;
-      if (_GEN_13)
+      if (_GEN_11)
         validArray_7 <= _validArray_T;
-      if (_GEN_14)
+      if (_GEN_12)
         validArray_8 <= _validArray_T;
-      if (_GEN_15)
+      if (_GEN_13)
         validArray_9 <= _validArray_T;
-      if (_GEN_16)
+      if (_GEN_14)
         validArray_10 <= _validArray_T;
-      if (_GEN_17)
+      if (_GEN_15)
         validArray_11 <= _validArray_T;
-      if (_GEN_18)
+      if (_GEN_16)
         validArray_12 <= _validArray_T;
-      if (_GEN_19)
+      if (_GEN_17)
         validArray_13 <= _validArray_T;
-      if (_GEN_20)
+      if (_GEN_18)
         validArray_14 <= _validArray_T;
-      if (_GEN_21)
+      if (_GEN_19)
         validArray_15 <= _validArray_T;
-      if (_GEN_22)
+      if (_GEN_20)
         validArray_16 <= _validArray_T;
-      if (_GEN_23)
+      if (_GEN_21)
         validArray_17 <= _validArray_T;
-      if (_GEN_24)
+      if (_GEN_22)
         validArray_18 <= _validArray_T;
-      if (_GEN_25)
+      if (_GEN_23)
         validArray_19 <= _validArray_T;
-      if (_GEN_26)
+      if (_GEN_24)
         validArray_20 <= _validArray_T;
-      if (_GEN_27)
+      if (_GEN_25)
         validArray_21 <= _validArray_T;
-      if (_GEN_28)
+      if (_GEN_26)
         validArray_22 <= _validArray_T;
-      if (_GEN_29)
+      if (_GEN_27)
         validArray_23 <= _validArray_T;
-      if (_GEN_30)
+      if (_GEN_28)
         validArray_24 <= _validArray_T;
-      if (_GEN_31)
+      if (_GEN_29)
         validArray_25 <= _validArray_T;
-      if (_GEN_32)
+      if (_GEN_30)
         validArray_26 <= _validArray_T;
-      if (_GEN_33)
+      if (_GEN_31)
         validArray_27 <= _validArray_T;
-      if (_GEN_34)
+      if (_GEN_32)
         validArray_28 <= _validArray_T;
-      if (_GEN_35)
+      if (_GEN_33)
         validArray_29 <= _validArray_T;
-      if (_GEN_36)
+      if (_GEN_34)
         validArray_30 <= _validArray_T;
-      if (_GEN_37)
+      if (_GEN_35)
         validArray_31 <= _validArray_T;
-      if (_GEN_38)
+      if (_GEN_36)
         validArray_32 <= _validArray_T;
-      if (_GEN_39)
+      if (_GEN_37)
         validArray_33 <= _validArray_T;
-      if (_GEN_40)
+      if (_GEN_38)
         validArray_34 <= _validArray_T;
-      if (_GEN_41)
+      if (_GEN_39)
         validArray_35 <= _validArray_T;
-      if (_GEN_42)
+      if (_GEN_40)
         validArray_36 <= _validArray_T;
-      if (_GEN_43)
+      if (_GEN_41)
         validArray_37 <= _validArray_T;
-      if (_GEN_44)
+      if (_GEN_42)
         validArray_38 <= _validArray_T;
-      if (_GEN_45)
+      if (_GEN_43)
         validArray_39 <= _validArray_T;
-      if (_GEN_46)
+      if (_GEN_44)
         validArray_40 <= _validArray_T;
-      if (_GEN_47)
+      if (_GEN_45)
         validArray_41 <= _validArray_T;
-      if (_GEN_48)
+      if (_GEN_46)
         validArray_42 <= _validArray_T;
-      if (_GEN_49)
+      if (_GEN_47)
         validArray_43 <= _validArray_T;
-      if (_GEN_50)
+      if (_GEN_48)
         validArray_44 <= _validArray_T;
-      if (_GEN_51)
+      if (_GEN_49)
         validArray_45 <= _validArray_T;
-      if (_GEN_52)
+      if (_GEN_50)
         validArray_46 <= _validArray_T;
-      if (_GEN_53)
+      if (_GEN_51)
         validArray_47 <= _validArray_T;
-      if (_GEN_54)
+      if (_GEN_52)
         validArray_48 <= _validArray_T;
-      if (_GEN_55)
+      if (_GEN_53)
         validArray_49 <= _validArray_T;
-      if (_GEN_56)
+      if (_GEN_54)
         validArray_50 <= _validArray_T;
-      if (_GEN_57)
+      if (_GEN_55)
         validArray_51 <= _validArray_T;
-      if (_GEN_58)
+      if (_GEN_56)
         validArray_52 <= _validArray_T;
-      if (_GEN_59)
+      if (_GEN_57)
         validArray_53 <= _validArray_T;
-      if (_GEN_60)
+      if (_GEN_58)
         validArray_54 <= _validArray_T;
-      if (_GEN_61)
+      if (_GEN_59)
         validArray_55 <= _validArray_T;
-      if (_GEN_62)
+      if (_GEN_60)
         validArray_56 <= _validArray_T;
-      if (_GEN_63)
+      if (_GEN_61)
         validArray_57 <= _validArray_T;
-      if (_GEN_64)
+      if (_GEN_62)
         validArray_58 <= _validArray_T;
-      if (_GEN_65)
+      if (_GEN_63)
         validArray_59 <= _validArray_T;
-      if (_GEN_66)
+      if (_GEN_64)
         validArray_60 <= _validArray_T;
-      if (_GEN_67)
+      if (_GEN_65)
         validArray_61 <= _validArray_T;
-      if (_GEN_68)
+      if (_GEN_66)
         validArray_62 <= _validArray_T;
       if (&(requestAddr[9:4]))
         validArray_63 <= _validArray_T;
-      if (state == 3'h4)
-        state <= 3'h0;
-      else if (state == 3'h3) begin
-        if (fillLast)
-          state <= 3'h4;
-        else
-          state <= 3'h3;
-      end
-      else if (state == 3'h2)
-        state <= {2'h1, io_axi_ar_arvalid_0 & io_axi_ar_arready};
-      else if (state == 3'h1)
-        state <= hit ? 3'h4 : 3'h2;
-      else
-        state <= {2'h0, ~(|state) & io_cpuReq};
-      if (_responseInst_T & ~hit)
+      _GEN_68 =
+        {{{1'h0, requestFire & ~lookupHit}},
+         {{1'h1, fillLast}},
+         {io_axi_ar_arvalid_0 & io_axi_ar_arready ? 2'h2 : 2'h1},
+         {{1'h0, requestFire & ~lookupHit}}};
+      state <= _GEN_68[state];
+      hitResponseValid <= _hitResponseInst_T;
+      if (missStart)
         fillWordOffset <= 2'h0;
       else if (fillEnable & ~io_axi_r_rlast)
         fillWordOffset <= fillWordOffset + 2'h1;
     end
-    if (_GEN_6) begin
+    if (_GEN_4) begin
       if (fillLast)
         tagArray_0 <= requestAddr[31:10];
       else
-        tagArray_0 <= _GEN_0;
+        tagArray_0 <= _GEN_67;
       if (fillEnable)
         dataArray_0 <= filledLine;
       else
-        dataArray_0 <= _GEN_4;
+        dataArray_0 <= _GEN_2;
     end
-    if (_GEN_7) begin
+    if (_GEN_5) begin
       if (fillLast)
         tagArray_1 <= requestAddr[31:10];
       else
-        tagArray_1 <= _GEN_0;
+        tagArray_1 <= _GEN_67;
       if (fillEnable)
         dataArray_1 <= filledLine;
       else
-        dataArray_1 <= _GEN_4;
+        dataArray_1 <= _GEN_2;
     end
-    if (_GEN_8) begin
+    if (_GEN_6) begin
       if (fillLast)
         tagArray_2 <= requestAddr[31:10];
       else
-        tagArray_2 <= _GEN_0;
+        tagArray_2 <= _GEN_67;
       if (fillEnable)
         dataArray_2 <= filledLine;
       else
-        dataArray_2 <= _GEN_4;
+        dataArray_2 <= _GEN_2;
     end
-    if (_GEN_9) begin
+    if (_GEN_7) begin
       if (fillLast)
         tagArray_3 <= requestAddr[31:10];
       else
-        tagArray_3 <= _GEN_0;
+        tagArray_3 <= _GEN_67;
       if (fillEnable)
         dataArray_3 <= filledLine;
       else
-        dataArray_3 <= _GEN_4;
+        dataArray_3 <= _GEN_2;
     end
-    if (_GEN_10) begin
+    if (_GEN_8) begin
       if (fillLast)
         tagArray_4 <= requestAddr[31:10];
       else
-        tagArray_4 <= _GEN_0;
+        tagArray_4 <= _GEN_67;
       if (fillEnable)
         dataArray_4 <= filledLine;
       else
-        dataArray_4 <= _GEN_4;
+        dataArray_4 <= _GEN_2;
     end
-    if (_GEN_11) begin
+    if (_GEN_9) begin
       if (fillLast)
         tagArray_5 <= requestAddr[31:10];
       else
-        tagArray_5 <= _GEN_0;
+        tagArray_5 <= _GEN_67;
       if (fillEnable)
         dataArray_5 <= filledLine;
       else
-        dataArray_5 <= _GEN_4;
+        dataArray_5 <= _GEN_2;
     end
-    if (_GEN_12) begin
+    if (_GEN_10) begin
       if (fillLast)
         tagArray_6 <= requestAddr[31:10];
       else
-        tagArray_6 <= _GEN_0;
+        tagArray_6 <= _GEN_67;
       if (fillEnable)
         dataArray_6 <= filledLine;
       else
-        dataArray_6 <= _GEN_4;
+        dataArray_6 <= _GEN_2;
     end
-    if (_GEN_13) begin
+    if (_GEN_11) begin
       if (fillLast)
         tagArray_7 <= requestAddr[31:10];
       else
-        tagArray_7 <= _GEN_0;
+        tagArray_7 <= _GEN_67;
       if (fillEnable)
         dataArray_7 <= filledLine;
       else
-        dataArray_7 <= _GEN_4;
+        dataArray_7 <= _GEN_2;
     end
-    if (_GEN_14) begin
+    if (_GEN_12) begin
       if (fillLast)
         tagArray_8 <= requestAddr[31:10];
       else
-        tagArray_8 <= _GEN_0;
+        tagArray_8 <= _GEN_67;
       if (fillEnable)
         dataArray_8 <= filledLine;
       else
-        dataArray_8 <= _GEN_4;
+        dataArray_8 <= _GEN_2;
     end
-    if (_GEN_15) begin
+    if (_GEN_13) begin
       if (fillLast)
         tagArray_9 <= requestAddr[31:10];
       else
-        tagArray_9 <= _GEN_0;
+        tagArray_9 <= _GEN_67;
       if (fillEnable)
         dataArray_9 <= filledLine;
       else
-        dataArray_9 <= _GEN_4;
+        dataArray_9 <= _GEN_2;
     end
-    if (_GEN_16) begin
+    if (_GEN_14) begin
       if (fillLast)
         tagArray_10 <= requestAddr[31:10];
       else
-        tagArray_10 <= _GEN_0;
+        tagArray_10 <= _GEN_67;
       if (fillEnable)
         dataArray_10 <= filledLine;
       else
-        dataArray_10 <= _GEN_4;
+        dataArray_10 <= _GEN_2;
     end
-    if (_GEN_17) begin
+    if (_GEN_15) begin
       if (fillLast)
         tagArray_11 <= requestAddr[31:10];
       else
-        tagArray_11 <= _GEN_0;
+        tagArray_11 <= _GEN_67;
       if (fillEnable)
         dataArray_11 <= filledLine;
       else
-        dataArray_11 <= _GEN_4;
+        dataArray_11 <= _GEN_2;
     end
-    if (_GEN_18) begin
+    if (_GEN_16) begin
       if (fillLast)
         tagArray_12 <= requestAddr[31:10];
       else
-        tagArray_12 <= _GEN_0;
+        tagArray_12 <= _GEN_67;
       if (fillEnable)
         dataArray_12 <= filledLine;
       else
-        dataArray_12 <= _GEN_4;
+        dataArray_12 <= _GEN_2;
     end
-    if (_GEN_19) begin
+    if (_GEN_17) begin
       if (fillLast)
         tagArray_13 <= requestAddr[31:10];
       else
-        tagArray_13 <= _GEN_0;
+        tagArray_13 <= _GEN_67;
       if (fillEnable)
         dataArray_13 <= filledLine;
       else
-        dataArray_13 <= _GEN_4;
+        dataArray_13 <= _GEN_2;
     end
-    if (_GEN_20) begin
+    if (_GEN_18) begin
       if (fillLast)
         tagArray_14 <= requestAddr[31:10];
       else
-        tagArray_14 <= _GEN_0;
+        tagArray_14 <= _GEN_67;
       if (fillEnable)
         dataArray_14 <= filledLine;
       else
-        dataArray_14 <= _GEN_4;
+        dataArray_14 <= _GEN_2;
     end
-    if (_GEN_21) begin
+    if (_GEN_19) begin
       if (fillLast)
         tagArray_15 <= requestAddr[31:10];
       else
-        tagArray_15 <= _GEN_0;
+        tagArray_15 <= _GEN_67;
       if (fillEnable)
         dataArray_15 <= filledLine;
       else
-        dataArray_15 <= _GEN_4;
+        dataArray_15 <= _GEN_2;
     end
-    if (_GEN_22) begin
+    if (_GEN_20) begin
       if (fillLast)
         tagArray_16 <= requestAddr[31:10];
       else
-        tagArray_16 <= _GEN_0;
+        tagArray_16 <= _GEN_67;
       if (fillEnable)
         dataArray_16 <= filledLine;
       else
-        dataArray_16 <= _GEN_4;
+        dataArray_16 <= _GEN_2;
     end
-    if (_GEN_23) begin
+    if (_GEN_21) begin
       if (fillLast)
         tagArray_17 <= requestAddr[31:10];
       else
-        tagArray_17 <= _GEN_0;
+        tagArray_17 <= _GEN_67;
       if (fillEnable)
         dataArray_17 <= filledLine;
       else
-        dataArray_17 <= _GEN_4;
+        dataArray_17 <= _GEN_2;
     end
-    if (_GEN_24) begin
+    if (_GEN_22) begin
       if (fillLast)
         tagArray_18 <= requestAddr[31:10];
       else
-        tagArray_18 <= _GEN_0;
+        tagArray_18 <= _GEN_67;
       if (fillEnable)
         dataArray_18 <= filledLine;
       else
-        dataArray_18 <= _GEN_4;
+        dataArray_18 <= _GEN_2;
     end
-    if (_GEN_25) begin
+    if (_GEN_23) begin
       if (fillLast)
         tagArray_19 <= requestAddr[31:10];
       else
-        tagArray_19 <= _GEN_0;
+        tagArray_19 <= _GEN_67;
       if (fillEnable)
         dataArray_19 <= filledLine;
       else
-        dataArray_19 <= _GEN_4;
+        dataArray_19 <= _GEN_2;
     end
-    if (_GEN_26) begin
+    if (_GEN_24) begin
       if (fillLast)
         tagArray_20 <= requestAddr[31:10];
       else
-        tagArray_20 <= _GEN_0;
+        tagArray_20 <= _GEN_67;
       if (fillEnable)
         dataArray_20 <= filledLine;
       else
-        dataArray_20 <= _GEN_4;
+        dataArray_20 <= _GEN_2;
     end
-    if (_GEN_27) begin
+    if (_GEN_25) begin
       if (fillLast)
         tagArray_21 <= requestAddr[31:10];
       else
-        tagArray_21 <= _GEN_0;
+        tagArray_21 <= _GEN_67;
       if (fillEnable)
         dataArray_21 <= filledLine;
       else
-        dataArray_21 <= _GEN_4;
+        dataArray_21 <= _GEN_2;
     end
-    if (_GEN_28) begin
+    if (_GEN_26) begin
       if (fillLast)
         tagArray_22 <= requestAddr[31:10];
       else
-        tagArray_22 <= _GEN_0;
+        tagArray_22 <= _GEN_67;
       if (fillEnable)
         dataArray_22 <= filledLine;
       else
-        dataArray_22 <= _GEN_4;
+        dataArray_22 <= _GEN_2;
     end
-    if (_GEN_29) begin
+    if (_GEN_27) begin
       if (fillLast)
         tagArray_23 <= requestAddr[31:10];
       else
-        tagArray_23 <= _GEN_0;
+        tagArray_23 <= _GEN_67;
       if (fillEnable)
         dataArray_23 <= filledLine;
       else
-        dataArray_23 <= _GEN_4;
+        dataArray_23 <= _GEN_2;
     end
-    if (_GEN_30) begin
+    if (_GEN_28) begin
       if (fillLast)
         tagArray_24 <= requestAddr[31:10];
       else
-        tagArray_24 <= _GEN_0;
+        tagArray_24 <= _GEN_67;
       if (fillEnable)
         dataArray_24 <= filledLine;
       else
-        dataArray_24 <= _GEN_4;
+        dataArray_24 <= _GEN_2;
     end
-    if (_GEN_31) begin
+    if (_GEN_29) begin
       if (fillLast)
         tagArray_25 <= requestAddr[31:10];
       else
-        tagArray_25 <= _GEN_0;
+        tagArray_25 <= _GEN_67;
       if (fillEnable)
         dataArray_25 <= filledLine;
       else
-        dataArray_25 <= _GEN_4;
+        dataArray_25 <= _GEN_2;
     end
-    if (_GEN_32) begin
+    if (_GEN_30) begin
       if (fillLast)
         tagArray_26 <= requestAddr[31:10];
       else
-        tagArray_26 <= _GEN_0;
+        tagArray_26 <= _GEN_67;
       if (fillEnable)
         dataArray_26 <= filledLine;
       else
-        dataArray_26 <= _GEN_4;
+        dataArray_26 <= _GEN_2;
     end
-    if (_GEN_33) begin
+    if (_GEN_31) begin
       if (fillLast)
         tagArray_27 <= requestAddr[31:10];
       else
-        tagArray_27 <= _GEN_0;
+        tagArray_27 <= _GEN_67;
       if (fillEnable)
         dataArray_27 <= filledLine;
       else
-        dataArray_27 <= _GEN_4;
+        dataArray_27 <= _GEN_2;
     end
-    if (_GEN_34) begin
+    if (_GEN_32) begin
       if (fillLast)
         tagArray_28 <= requestAddr[31:10];
       else
-        tagArray_28 <= _GEN_0;
+        tagArray_28 <= _GEN_67;
       if (fillEnable)
         dataArray_28 <= filledLine;
       else
-        dataArray_28 <= _GEN_4;
+        dataArray_28 <= _GEN_2;
     end
-    if (_GEN_35) begin
+    if (_GEN_33) begin
       if (fillLast)
         tagArray_29 <= requestAddr[31:10];
       else
-        tagArray_29 <= _GEN_0;
+        tagArray_29 <= _GEN_67;
       if (fillEnable)
         dataArray_29 <= filledLine;
       else
-        dataArray_29 <= _GEN_4;
+        dataArray_29 <= _GEN_2;
     end
-    if (_GEN_36) begin
+    if (_GEN_34) begin
       if (fillLast)
         tagArray_30 <= requestAddr[31:10];
       else
-        tagArray_30 <= _GEN_0;
+        tagArray_30 <= _GEN_67;
       if (fillEnable)
         dataArray_30 <= filledLine;
       else
-        dataArray_30 <= _GEN_4;
+        dataArray_30 <= _GEN_2;
     end
-    if (_GEN_37) begin
+    if (_GEN_35) begin
       if (fillLast)
         tagArray_31 <= requestAddr[31:10];
       else
-        tagArray_31 <= _GEN_0;
+        tagArray_31 <= _GEN_67;
       if (fillEnable)
         dataArray_31 <= filledLine;
       else
-        dataArray_31 <= _GEN_4;
+        dataArray_31 <= _GEN_2;
     end
-    if (_GEN_38) begin
+    if (_GEN_36) begin
       if (fillLast)
         tagArray_32 <= requestAddr[31:10];
       else
-        tagArray_32 <= _GEN_0;
+        tagArray_32 <= _GEN_67;
       if (fillEnable)
         dataArray_32 <= filledLine;
       else
-        dataArray_32 <= _GEN_4;
+        dataArray_32 <= _GEN_2;
     end
-    if (_GEN_39) begin
+    if (_GEN_37) begin
       if (fillLast)
         tagArray_33 <= requestAddr[31:10];
       else
-        tagArray_33 <= _GEN_0;
+        tagArray_33 <= _GEN_67;
       if (fillEnable)
         dataArray_33 <= filledLine;
       else
-        dataArray_33 <= _GEN_4;
+        dataArray_33 <= _GEN_2;
     end
-    if (_GEN_40) begin
+    if (_GEN_38) begin
       if (fillLast)
         tagArray_34 <= requestAddr[31:10];
       else
-        tagArray_34 <= _GEN_0;
+        tagArray_34 <= _GEN_67;
       if (fillEnable)
         dataArray_34 <= filledLine;
       else
-        dataArray_34 <= _GEN_4;
+        dataArray_34 <= _GEN_2;
     end
-    if (_GEN_41) begin
+    if (_GEN_39) begin
       if (fillLast)
         tagArray_35 <= requestAddr[31:10];
       else
-        tagArray_35 <= _GEN_0;
+        tagArray_35 <= _GEN_67;
       if (fillEnable)
         dataArray_35 <= filledLine;
       else
-        dataArray_35 <= _GEN_4;
+        dataArray_35 <= _GEN_2;
     end
-    if (_GEN_42) begin
+    if (_GEN_40) begin
       if (fillLast)
         tagArray_36 <= requestAddr[31:10];
       else
-        tagArray_36 <= _GEN_0;
+        tagArray_36 <= _GEN_67;
       if (fillEnable)
         dataArray_36 <= filledLine;
       else
-        dataArray_36 <= _GEN_4;
+        dataArray_36 <= _GEN_2;
     end
-    if (_GEN_43) begin
+    if (_GEN_41) begin
       if (fillLast)
         tagArray_37 <= requestAddr[31:10];
       else
-        tagArray_37 <= _GEN_0;
+        tagArray_37 <= _GEN_67;
       if (fillEnable)
         dataArray_37 <= filledLine;
       else
-        dataArray_37 <= _GEN_4;
+        dataArray_37 <= _GEN_2;
     end
-    if (_GEN_44) begin
+    if (_GEN_42) begin
       if (fillLast)
         tagArray_38 <= requestAddr[31:10];
       else
-        tagArray_38 <= _GEN_0;
+        tagArray_38 <= _GEN_67;
       if (fillEnable)
         dataArray_38 <= filledLine;
       else
-        dataArray_38 <= _GEN_4;
+        dataArray_38 <= _GEN_2;
     end
-    if (_GEN_45) begin
+    if (_GEN_43) begin
       if (fillLast)
         tagArray_39 <= requestAddr[31:10];
       else
-        tagArray_39 <= _GEN_0;
+        tagArray_39 <= _GEN_67;
       if (fillEnable)
         dataArray_39 <= filledLine;
       else
-        dataArray_39 <= _GEN_4;
+        dataArray_39 <= _GEN_2;
     end
-    if (_GEN_46) begin
+    if (_GEN_44) begin
       if (fillLast)
         tagArray_40 <= requestAddr[31:10];
       else
-        tagArray_40 <= _GEN_0;
+        tagArray_40 <= _GEN_67;
       if (fillEnable)
         dataArray_40 <= filledLine;
       else
-        dataArray_40 <= _GEN_4;
+        dataArray_40 <= _GEN_2;
     end
-    if (_GEN_47) begin
+    if (_GEN_45) begin
       if (fillLast)
         tagArray_41 <= requestAddr[31:10];
       else
-        tagArray_41 <= _GEN_0;
+        tagArray_41 <= _GEN_67;
       if (fillEnable)
         dataArray_41 <= filledLine;
       else
-        dataArray_41 <= _GEN_4;
+        dataArray_41 <= _GEN_2;
     end
-    if (_GEN_48) begin
+    if (_GEN_46) begin
       if (fillLast)
         tagArray_42 <= requestAddr[31:10];
       else
-        tagArray_42 <= _GEN_0;
+        tagArray_42 <= _GEN_67;
       if (fillEnable)
         dataArray_42 <= filledLine;
       else
-        dataArray_42 <= _GEN_4;
+        dataArray_42 <= _GEN_2;
     end
-    if (_GEN_49) begin
+    if (_GEN_47) begin
       if (fillLast)
         tagArray_43 <= requestAddr[31:10];
       else
-        tagArray_43 <= _GEN_0;
+        tagArray_43 <= _GEN_67;
       if (fillEnable)
         dataArray_43 <= filledLine;
       else
-        dataArray_43 <= _GEN_4;
+        dataArray_43 <= _GEN_2;
     end
-    if (_GEN_50) begin
+    if (_GEN_48) begin
       if (fillLast)
         tagArray_44 <= requestAddr[31:10];
       else
-        tagArray_44 <= _GEN_0;
+        tagArray_44 <= _GEN_67;
       if (fillEnable)
         dataArray_44 <= filledLine;
       else
-        dataArray_44 <= _GEN_4;
+        dataArray_44 <= _GEN_2;
     end
-    if (_GEN_51) begin
+    if (_GEN_49) begin
       if (fillLast)
         tagArray_45 <= requestAddr[31:10];
       else
-        tagArray_45 <= _GEN_0;
+        tagArray_45 <= _GEN_67;
       if (fillEnable)
         dataArray_45 <= filledLine;
       else
-        dataArray_45 <= _GEN_4;
+        dataArray_45 <= _GEN_2;
     end
-    if (_GEN_52) begin
+    if (_GEN_50) begin
       if (fillLast)
         tagArray_46 <= requestAddr[31:10];
       else
-        tagArray_46 <= _GEN_0;
+        tagArray_46 <= _GEN_67;
       if (fillEnable)
         dataArray_46 <= filledLine;
       else
-        dataArray_46 <= _GEN_4;
+        dataArray_46 <= _GEN_2;
     end
-    if (_GEN_53) begin
+    if (_GEN_51) begin
       if (fillLast)
         tagArray_47 <= requestAddr[31:10];
       else
-        tagArray_47 <= _GEN_0;
+        tagArray_47 <= _GEN_67;
       if (fillEnable)
         dataArray_47 <= filledLine;
       else
-        dataArray_47 <= _GEN_4;
+        dataArray_47 <= _GEN_2;
     end
-    if (_GEN_54) begin
+    if (_GEN_52) begin
       if (fillLast)
         tagArray_48 <= requestAddr[31:10];
       else
-        tagArray_48 <= _GEN_0;
+        tagArray_48 <= _GEN_67;
       if (fillEnable)
         dataArray_48 <= filledLine;
       else
-        dataArray_48 <= _GEN_4;
+        dataArray_48 <= _GEN_2;
     end
-    if (_GEN_55) begin
+    if (_GEN_53) begin
       if (fillLast)
         tagArray_49 <= requestAddr[31:10];
       else
-        tagArray_49 <= _GEN_0;
+        tagArray_49 <= _GEN_67;
       if (fillEnable)
         dataArray_49 <= filledLine;
       else
-        dataArray_49 <= _GEN_4;
+        dataArray_49 <= _GEN_2;
     end
-    if (_GEN_56) begin
+    if (_GEN_54) begin
       if (fillLast)
         tagArray_50 <= requestAddr[31:10];
       else
-        tagArray_50 <= _GEN_0;
+        tagArray_50 <= _GEN_67;
       if (fillEnable)
         dataArray_50 <= filledLine;
       else
-        dataArray_50 <= _GEN_4;
+        dataArray_50 <= _GEN_2;
     end
-    if (_GEN_57) begin
+    if (_GEN_55) begin
       if (fillLast)
         tagArray_51 <= requestAddr[31:10];
       else
-        tagArray_51 <= _GEN_0;
+        tagArray_51 <= _GEN_67;
       if (fillEnable)
         dataArray_51 <= filledLine;
       else
-        dataArray_51 <= _GEN_4;
+        dataArray_51 <= _GEN_2;
     end
-    if (_GEN_58) begin
+    if (_GEN_56) begin
       if (fillLast)
         tagArray_52 <= requestAddr[31:10];
       else
-        tagArray_52 <= _GEN_0;
+        tagArray_52 <= _GEN_67;
       if (fillEnable)
         dataArray_52 <= filledLine;
       else
-        dataArray_52 <= _GEN_4;
+        dataArray_52 <= _GEN_2;
     end
-    if (_GEN_59) begin
+    if (_GEN_57) begin
       if (fillLast)
         tagArray_53 <= requestAddr[31:10];
       else
-        tagArray_53 <= _GEN_0;
+        tagArray_53 <= _GEN_67;
       if (fillEnable)
         dataArray_53 <= filledLine;
       else
-        dataArray_53 <= _GEN_4;
+        dataArray_53 <= _GEN_2;
     end
-    if (_GEN_60) begin
+    if (_GEN_58) begin
       if (fillLast)
         tagArray_54 <= requestAddr[31:10];
       else
-        tagArray_54 <= _GEN_0;
+        tagArray_54 <= _GEN_67;
       if (fillEnable)
         dataArray_54 <= filledLine;
       else
-        dataArray_54 <= _GEN_4;
+        dataArray_54 <= _GEN_2;
     end
-    if (_GEN_61) begin
+    if (_GEN_59) begin
       if (fillLast)
         tagArray_55 <= requestAddr[31:10];
       else
-        tagArray_55 <= _GEN_0;
+        tagArray_55 <= _GEN_67;
       if (fillEnable)
         dataArray_55 <= filledLine;
       else
-        dataArray_55 <= _GEN_4;
+        dataArray_55 <= _GEN_2;
     end
-    if (_GEN_62) begin
+    if (_GEN_60) begin
       if (fillLast)
         tagArray_56 <= requestAddr[31:10];
       else
-        tagArray_56 <= _GEN_0;
+        tagArray_56 <= _GEN_67;
       if (fillEnable)
         dataArray_56 <= filledLine;
       else
-        dataArray_56 <= _GEN_4;
+        dataArray_56 <= _GEN_2;
     end
-    if (_GEN_63) begin
+    if (_GEN_61) begin
       if (fillLast)
         tagArray_57 <= requestAddr[31:10];
       else
-        tagArray_57 <= _GEN_0;
+        tagArray_57 <= _GEN_67;
       if (fillEnable)
         dataArray_57 <= filledLine;
       else
-        dataArray_57 <= _GEN_4;
+        dataArray_57 <= _GEN_2;
     end
-    if (_GEN_64) begin
+    if (_GEN_62) begin
       if (fillLast)
         tagArray_58 <= requestAddr[31:10];
       else
-        tagArray_58 <= _GEN_0;
+        tagArray_58 <= _GEN_67;
       if (fillEnable)
         dataArray_58 <= filledLine;
       else
-        dataArray_58 <= _GEN_4;
+        dataArray_58 <= _GEN_2;
     end
-    if (_GEN_65) begin
+    if (_GEN_63) begin
       if (fillLast)
         tagArray_59 <= requestAddr[31:10];
       else
-        tagArray_59 <= _GEN_0;
+        tagArray_59 <= _GEN_67;
       if (fillEnable)
         dataArray_59 <= filledLine;
       else
-        dataArray_59 <= _GEN_4;
+        dataArray_59 <= _GEN_2;
     end
-    if (_GEN_66) begin
+    if (_GEN_64) begin
       if (fillLast)
         tagArray_60 <= requestAddr[31:10];
       else
-        tagArray_60 <= _GEN_0;
+        tagArray_60 <= _GEN_67;
       if (fillEnable)
         dataArray_60 <= filledLine;
       else
-        dataArray_60 <= _GEN_4;
+        dataArray_60 <= _GEN_2;
     end
-    if (_GEN_67) begin
+    if (_GEN_65) begin
       if (fillLast)
         tagArray_61 <= requestAddr[31:10];
       else
-        tagArray_61 <= _GEN_0;
+        tagArray_61 <= _GEN_67;
       if (fillEnable)
         dataArray_61 <= filledLine;
       else
-        dataArray_61 <= _GEN_4;
+        dataArray_61 <= _GEN_2;
     end
-    if (_GEN_68) begin
+    if (_GEN_66) begin
       if (fillLast)
         tagArray_62 <= requestAddr[31:10];
       else
-        tagArray_62 <= _GEN_0;
+        tagArray_62 <= _GEN_67;
       if (fillEnable)
         dataArray_62 <= filledLine;
       else
-        dataArray_62 <= _GEN_4;
+        dataArray_62 <= _GEN_2;
     end
     if (&(requestAddr[9:4])) begin
       if (fillLast)
         tagArray_63 <= requestAddr[31:10];
       else
-        tagArray_63 <= _GEN_0;
+        tagArray_63 <= _GEN_67;
       if (fillEnable)
         dataArray_63 <= filledLine;
       else
-        dataArray_63 <= _GEN_4;
+        dataArray_63 <= _GEN_2;
     end
-    if (~(|state) & io_cpuReq)
+    if (missStart)
       requestAddr <= io_cpuAddr;
-    if (_responseInst_T & hit) begin
-      automatic logic [3:0][31:0] _GEN_69;
-      _GEN_69 = {{_GEN_4[127:96]}, {_GEN_4[95:64]}, {_GEN_4[63:32]}, {_GEN_4[31:0]}};
-      responseInst <= _GEN_69[requestAddr[3:2]];
+    if (_hitResponseInst_T) begin
+      automatic logic [127:0]     _GEN_69;
+      automatic logic [3:0][31:0] _GEN_70;
+      _GEN_69 = _GEN_1[io_cpuAddr[9:4]];
+      _GEN_70 = {{_GEN_69[127:96]}, {_GEN_69[95:64]}, {_GEN_69[63:32]}, {_GEN_69[31:0]}};
+      hitResponseInst <= _GEN_70[io_cpuAddr[3:2]];
     end
-    else if (fillEnable & fillWordOffset == requestAddr[3:2])
-      responseInst <= io_axi_r_rdata;
+    if (fillEnable & fillWordOffset == requestAddr[3:2])
+      missResponseInst <= io_axi_r_rdata;
   end // always @(posedge)
-  assign io_cpuRespValid = state == 3'h4;
-  assign io_cpuRespInst = responseInst;
+  assign io_cpuRespValid = hitResponseValid | (&state);
+  assign io_cpuRespInst = hitResponseValid ? hitResponseInst : missResponseInst;
   assign io_axi_ar_araddr = {requestAddr[31:4], 4'h0};
   assign io_axi_ar_arvalid = io_axi_ar_arvalid_0;
   assign io_axi_r_rready = io_axi_r_rready_0;
